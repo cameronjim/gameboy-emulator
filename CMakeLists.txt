@@ -13,7 +13,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
-add_library(gbcore STATIC core/gameboy.cpp)
+add_library(gbcore STATIC core/cartridge.cpp core/gameboy.cpp core/mapper_rom.cpp)
 target_include_directories(gbcore PUBLIC core)
 target_compile_options(gbcore PRIVATE ${GB_WARNING_FLAGS})
 
@@ -38,10 +38,19 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(catch2)
 
 enable_testing()
-add_executable(gbcore_tests tests/unit/smoke_test.cpp)
+add_executable(gbcore_tests tests/unit/cartridge_test.cpp tests/unit/mapper_rom_test.cpp
+                            tests/unit/smoke_test.cpp)
 target_compile_options(gbcore_tests PRIVATE ${GB_WARNING_FLAGS})
 target_link_libraries(gbcore_tests PRIVATE gbcore Catch2::Catch2WithMain)
 
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
 include(Catch)
 catch_discover_tests(gbcore_tests)
+
+option(GB_BUILD_FUZZERS "build libfuzzer targets (clang only)" OFF)
+if(GB_BUILD_FUZZERS)
+    add_executable(fuzz_header tests/fuzz/fuzz_header.cpp core/cartridge.cpp core/mapper_rom.cpp)
+    target_include_directories(fuzz_header PRIVATE core)
+    target_compile_options(fuzz_header PRIVATE -fsanitize=fuzzer,address,undefined ${GB_WARNING_FLAGS})
+    target_link_options(fuzz_header PRIVATE -fsanitize=fuzzer,address,undefined)
+endif()
