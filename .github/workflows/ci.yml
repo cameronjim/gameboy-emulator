@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build_type: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: install sdl2
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - name: configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+      - name: build
+        run: cmake --build build -j
+      - name: frontend target built
+        run: cmake --build build --target gbemu-sdl -j
+      - name: test
+        run: ctest --test-dir build --output-on-failure
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
+      - name: format check
+        run: |
+          find core frontend tests/unit \( -name '*.cpp' -o -name '*.hpp' \) -print0 |
+            xargs -0 clang-format --dry-run --Werror
