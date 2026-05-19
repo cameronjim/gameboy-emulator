@@ -34,6 +34,10 @@ jobs:
         run: |
           find core frontend tests \( -name '*.cpp' -o -name '*.hpp' \) -print0 |
             xargs -0 clang-format --dry-run --Werror
+      - name: generated opcodes up to date
+        run: |
+          python3 tools/gen_opcodes.py
+          git diff --exit-code core/opcodes.inc tests/unit/opcode_meta.inc
 
   fuzz:
     runs-on: ubuntu-latest
