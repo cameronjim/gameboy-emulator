@@ -40,16 +40,6 @@ std::optional<Cartridge> Cartridge::parse(std::span<const uint8_t> bytes, std::s
         return reject("header checksum mismatch");
     }
 
-    const uint8_t type = bytes[kHeaderType];
-    if (type != 0x00) {
-        const bool mbc1 = type >= 0x01 && type <= 0x03;
-        const bool mbc3 = type >= 0x0F && type <= 0x13;
-        if (mbc1 || mbc3) {
-            return reject("unsupported mapper");
-        }
-        return reject("unknown cartridge type");
-    }
-
     const uint8_t rom_size_byte = bytes[kHeaderRomSize];
     if (rom_size_byte > 0x08) {
         return reject("unknown rom size");
@@ -58,6 +48,19 @@ std::optional<Cartridge> Cartridge::parse(std::span<const uint8_t> bytes, std::s
     const uint32_t declared_rom = 32768u << rom_size_byte;
     if (static_cast<size_t>(declared_rom) != bytes.size()) {
         return reject("rom size mismatch");
+    }
+
+    const uint8_t type = bytes[kHeaderType];
+    if (type != 0x00) {
+        const bool mbc1 = type >= 0x01 && type <= 0x03;
+        const bool mbc3 = type >= 0x0F && type <= 0x13;
+        if (!mbc1 && !mbc3) {
+            return reject("unknown cartridge type");
+        }
+        if (rom_size_byte != 0x00) {
+            return reject("unsupported mapper");
+        }
+        // 32kb mbc-typed roms fit unbanked; real mbc support lands in milestone 11
     }
 
     uint32_t ram_size = 0;
