@@ -13,8 +13,8 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
-add_library(gbcore STATIC core/cartridge.cpp core/cpu.cpp core/gameboy.cpp core/mapper_rom.cpp
-                          core/trace.cpp)
+add_library(gbcore STATIC core/bus.cpp core/cartridge.cpp core/cpu.cpp core/gameboy.cpp
+                          core/mapper_rom.cpp core/serial.cpp core/trace.cpp)
 target_include_directories(gbcore PUBLIC core)
 target_compile_options(gbcore PRIVATE ${GB_WARNING_FLAGS})
 
@@ -39,9 +39,10 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(catch2)
 
 enable_testing()
-add_executable(gbcore_tests tests/unit/cartridge_test.cpp tests/unit/cpu_alu_test.cpp
-                            tests/unit/cpu_blargg_smoke_test.cpp tests/unit/cpu_decode_test.cpp
-                            tests/unit/cpu_test.cpp tests/unit/mapper_rom_test.cpp
+add_executable(gbcore_tests tests/unit/bus_test.cpp tests/unit/cartridge_test.cpp
+                            tests/unit/cpu_alu_test.cpp tests/unit/cpu_blargg_smoke_test.cpp
+                            tests/unit/cpu_decode_test.cpp tests/unit/cpu_test.cpp
+                            tests/unit/gameboy_test.cpp tests/unit/mapper_rom_test.cpp
                             tests/unit/smoke_test.cpp tests/unit/trace_test.cpp)
 target_compile_options(gbcore_tests PRIVATE ${GB_WARNING_FLAGS})
 target_link_libraries(gbcore_tests PRIVATE gbcore Catch2::Catch2WithMain)
