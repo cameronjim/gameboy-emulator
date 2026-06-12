@@ -1,16 +1,21 @@
 #include "cartridge.hpp"
+#include "cpu.hpp"
 #include "gameboy.hpp"
+#include "trace.hpp"
 
 #include <SDL.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -65,15 +70,96 @@ bool print_cartridge(std::span<const uint8_t> bytes) {
     return true;
 }
 
+struct Options {
+    const char* rom_path = nullptr;
+    const char* doctor_path = nullptr;
+    uint64_t trace_from = 0;
+    bool ok = true;
+};
+
+Options parse_args(int argc, char* argv[]) {
+    Options opt;
+    for (int i = 1; i < argc; ++i) {
+        const std::string_view arg = argv[i];
+        if (arg == "--doctor" && i + 1 < argc) {
+            opt.doctor_path = argv[++i];
+        } else if (arg == "--trace-from" && i + 1 < argc) {
+            opt.trace_from = std::strtoull(argv[++i], nullptr, 10);
+        } else if (!arg.empty() && arg[0] == '-') {
+            opt.ok = false;
+        } else {
+            opt.rom_path = argv[i];
+        }
+    }
+    return opt;
+}
+
+// flat scaffolding memory for doctor runs until the bus lands in milestone 04
+struct FlatMemory final : gb::Memory {
+    uint8_t read8(uint16_t addr) override {
+        return mem[addr];
+    }
+    void write8(uint16_t addr, uint8_t value) override {
+        mem[addr] = value;
+    }
+
+    std::array<uint8_t, 0x10000> mem{};
+};
+
+int run_doctor(std::span<const uint8_t> rom, const char* out_path, uint64_t trace_from) {
+    // cap covers the longest cpu_instrs subtest; logs get huge, flush in blocks
+    constexpr uint64_t kMaxInstructions = 8000000;
+    constexpr size_t kFlushBytes = 1u << 20;
+
+    FlatMemory flat;
+    const size_t n = std::min(rom.size(), flat.mem.size());
+    std::copy_n(rom.begin(), n, flat.mem.begin());
+    gb::DoctorMemory mem(flat);
+    gb::Cpu cpu(mem);
+    gb::Trace trace(trace_from);
+
+    std::ofstream out(out_path, std::ios::binary);
+    if (!out) {
+        std::fprintf(stderr, "cannot open %s\n", out_path);
+        return 1;
+    }
+    std::string buffer;
+    buffer.reserve(kFlushBytes + 128);
+    for (uint64_t i = 0; i < kMaxInstructions && cpu.status() == gb::CpuStatus::Running; ++i) {
+        trace.log(cpu.regs(), mem, buffer);
+        cpu.step();
+        if (buffer.size() >= kFlushBytes) {
+            out.write(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+            buffer.clear();
+        }
+    }
+    out.write(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+    if (cpu.status() == gb::CpuStatus::Stopped) {
+        std::fprintf(stderr, "cpu trapped at pc=%04X opcode=%02X\n", cpu.trap_pc(), cpu.trap_opcode());
+    }
+    std::printf("doctor log: %llu instructions\n", static_cast<unsigned long long>(trace.count()));
+    return 0;
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
+    const Options opt = parse_args(argc, argv);
+    if (!opt.ok || (opt.doctor_path != nullptr && opt.rom_path == nullptr)) {
+        std::fprintf(stderr, "usage: gbemu-sdl [--doctor <path>] [--trace-from <n>] [rom]\n");
+        return 1;
+    }
+
     gb::Gameboy gameboy;
-    if (argc > 1) {
-        const std::vector<uint8_t> bytes = read_file(argv[1]);
+    if (opt.rom_path != nullptr) {
+        const std::vector<uint8_t> bytes = read_file(opt.rom_path);
         if (bytes.empty()) {
-            std::fprintf(stderr, "cannot read %s\n", argv[1]);
+            std::fprintf(stderr, "cannot read %s\n", opt.rom_path);
             return 1;
+        }
+        if (opt.doctor_path != nullptr) {
+            // doctor scaffolding runs on flat memory, so mbc-typed test roms are fine
+            return run_doctor(bytes, opt.doctor_path, opt.trace_from);
         }
         if (!print_cartridge(bytes)) {
             return 1;
