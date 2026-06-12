@@ -1,5 +1,7 @@
 #include "cartridge.hpp"
 
+#include "test_rom.hpp"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstddef>
@@ -10,25 +12,8 @@
 
 namespace {
 
-uint8_t header_checksum(const std::vector<uint8_t>& rom) {
-    uint8_t sum = 0;
-    for (uint16_t addr = 0x0134; addr <= 0x014C; ++addr) {
-        sum = static_cast<uint8_t>(sum - rom[addr] - 1);
-    }
-    return sum;
-}
-
 std::vector<uint8_t> make_rom(uint8_t type = 0x00, uint8_t rom_size_byte = 0x00, size_t file_size = 0x8000) {
-    std::vector<uint8_t> rom(file_size, 0);
-    const std::string title = "TETRIS";
-    for (size_t i = 0; i < title.size(); ++i) {
-        rom[0x0134 + i] = static_cast<uint8_t>(title[i]);
-    }
-    rom[0x0147] = type;
-    rom[0x0148] = rom_size_byte;
-    rom[0x0149] = 0x00;
-    rom[0x014D] = header_checksum(rom);
-    return rom;
+    return make_test_rom(type, rom_size_byte, file_size);
 }
 
 } // namespace
