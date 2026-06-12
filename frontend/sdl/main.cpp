@@ -164,7 +164,12 @@ int main(int argc, char* argv[]) {
         if (!print_cartridge(bytes)) {
             return 1;
         }
-        gameboy.load_rom(bytes);
+        if (!gameboy.load_rom(bytes)) {
+            std::fprintf(stderr, "load_rom failed\n");
+            return 1;
+        }
+        // test rom output channel
+        gameboy.set_serial_sink([](uint8_t b) { std::fputc(b, stdout); });
     }
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
