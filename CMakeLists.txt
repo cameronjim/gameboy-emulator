@@ -51,6 +51,10 @@ list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
 include(Catch)
 catch_discover_tests(gbcore_tests)
 
+add_executable(gbrom_harness tests/roms/harness.cpp)
+target_compile_options(gbrom_harness PRIVATE ${GB_WARNING_FLAGS})
+target_link_libraries(gbrom_harness PRIVATE gbcore)
+
 option(GB_BUILD_FUZZERS "build libfuzzer targets (clang only)" OFF)
 if(GB_BUILD_FUZZERS)
     add_executable(fuzz_header tests/fuzz/fuzz_header.cpp core/cartridge.cpp core/mapper_rom.cpp)

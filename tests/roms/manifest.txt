@@ -1,0 +1,13 @@
+# rom path (under tests/roms/vendor) | channel | expect | budget t-cycles | flags (- or xfail)
+# 02-interrupts needs the timer and stays xfail until milestone 06
+gb-test-roms/cpu_instrs/individual/01-special.gb | serial | Passed | 2000000000 | -
+gb-test-roms/cpu_instrs/individual/02-interrupts.gb | serial | Passed | 2000000000 | xfail
+gb-test-roms/cpu_instrs/individual/03-op sp,hl.gb | serial | Passed | 2000000000 | -
+gb-test-roms/cpu_instrs/individual/04-op r,imm.gb | serial | Passed | 2000000000 | -
+gb-test-roms/cpu_instrs/individual/05-op rp.gb | serial | Passed | 2000000000 | -
+gb-test-roms/cpu_instrs/individual/06-ld r,r.gb | serial | Passed | 2000000000 | -
+gb-test-roms/cpu_instrs/individual/07-jr,jp,call,ret,rst.gb | serial | Passed | 2000000000 | -
+gb-test-roms/cpu_instrs/individual/08-misc instrs.gb | serial | Passed | 2000000000 | -
+gb-test-roms/cpu_instrs/individual/09-op r,r.gb | serial | Passed | 2000000000 | -
+gb-test-roms/cpu_instrs/individual/10-bit ops.gb | serial | Passed | 2000000000 | -
+gb-test-roms/cpu_instrs/individual/11-op a,(hl).gb | serial | Passed | 2000000000 | -
