@@ -23,6 +23,12 @@ jobs:
         run: cmake --build build --target gbemu-sdl -j
       - name: test
         run: ctest --test-dir build --output-on-failure
+      - name: fetch test roms
+        if: matrix.build_type == 'Release'
+        run: ./tools/fetch-test-roms.sh
+      - name: run test roms
+        if: matrix.build_type == 'Release'
+        run: BUILD_DIR=build ./tools/run-test-roms.sh
 
   format:
     runs-on: ubuntu-latest

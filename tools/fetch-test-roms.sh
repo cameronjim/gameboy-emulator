@@ -1,5 +1,28 @@
 #!/usr/bin/env bash
-# stub: milestone 05 downloads blargg, mooneye, dmg-acid2 into tests/roms/vendor/
+# downloads test roms (free homebrew) into tests/roms/vendor, gitignored
 set -euo pipefail
-echo "fetch-test-roms: not implemented until milestone 05" >&2
-exit 0
+cd "$(dirname "$0")/.."
+vendor=tests/roms/vendor
+mkdir -p "$vendor"
+
+if [ ! -d "$vendor/gb-test-roms" ]; then
+    git clone -q --depth 1 https://github.com/retrio/gb-test-roms "$vendor/gb-test-roms"
+    echo "fetched blargg (gb-test-roms)"
+fi
+
+if [ ! -d "$vendor/mooneye" ]; then
+    mts=mts-20240127-1204-74ae166
+    curl -sfL "https://gekkio.fi/files/mooneye-test-suite/$mts/$mts.zip" -o "$vendor/mts.zip"
+    unzip -q "$vendor/mts.zip" -d "$vendor"
+    mv "$vendor/$mts" "$vendor/mooneye"
+    rm "$vendor/mts.zip"
+    echo "fetched mooneye test suite"
+fi
+
+if [ ! -f "$vendor/dmg-acid2.gb" ]; then
+    curl -sfL "https://github.com/mattcurrie/dmg-acid2/releases/download/v1.0/dmg-acid2.gb" \
+        -o "$vendor/dmg-acid2.gb"
+    echo "fetched dmg-acid2"
+fi
+
+echo "test roms ready in $vendor"
