@@ -3,6 +3,7 @@
 #include "interrupts.hpp"
 #include "mapper_rom.hpp"
 #include "serial.hpp"
+#include "timer.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -14,10 +15,22 @@ namespace {
 
 struct Rig {
     gb::Serial serial;
-    gb::Bus bus{serial};
+    gb::InterruptLine irq;
+    gb::Timer timer{irq};
+    gb::Bus bus{serial, timer, irq};
 };
 
 } // namespace
+
+TEST_CASE("timer_registers_route_through_bus") {
+    Rig rig;
+    rig.bus.write8(gb::kRegTma, 0x42);
+    REQUIRE(rig.bus.read8(gb::kRegTma) == 0x42);
+    rig.bus.write8(gb::kRegTac, 0x05);
+    REQUIRE(rig.bus.read8(gb::kRegTac) == 0xFD);
+    rig.bus.write8(gb::kRegDiv, 0x99);
+    REQUIRE(rig.bus.read8(gb::kRegDiv) == 0x00);
+}
 
 TEST_CASE("echo_ram_mirrors_wram_both_directions") {
     Rig rig;
