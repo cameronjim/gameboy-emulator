@@ -3,7 +3,9 @@
 #include "bus.hpp"
 #include "cartridge.hpp"
 #include "cpu.hpp"
+#include "interrupts.hpp"
 #include "serial.hpp"
+#include "timer.hpp"
 
 #include <array>
 #include <cstdint>
@@ -32,7 +34,9 @@ private:
     void render_test_pattern();
 
     Serial serial_;
-    Bus bus_{serial_};
+    InterruptLine irq_;
+    Timer timer_{irq_};
+    Bus bus_{serial_, timer_, irq_};
     Cpu cpu_{bus_};
     std::optional<Cartridge> cart_;
     uint64_t cycles_ = 0;

@@ -1,7 +1,5 @@
 #include "bus.hpp"
 
-#include "interrupts.hpp"
-
 namespace gb {
 
 namespace {
@@ -101,9 +99,17 @@ uint8_t Bus::read_io(uint16_t addr) {
         return serial_.read_sb();
     case kRegSc:
         return serial_.read_sc();
+    case kRegDiv:
+        return timer_.read_div();
+    case kRegTima:
+        return timer_.read_tima();
+    case kRegTma:
+        return timer_.read_tma();
+    case kRegTac:
+        return timer_.read_tac();
     case kRegIf:
         // upper 3 bits read as 1
-        return static_cast<uint8_t>(0xE0 | if_);
+        return static_cast<uint8_t>(0xE0 | irq_.read());
     case kRegDma:
         return dma_;
     default:
@@ -120,8 +126,20 @@ void Bus::write_io(uint16_t addr, uint8_t value) {
     case kRegSc:
         serial_.write_sc(value);
         break;
+    case kRegDiv:
+        timer_.write_div();
+        break;
+    case kRegTima:
+        timer_.write_tima(value);
+        break;
+    case kRegTma:
+        timer_.write_tma(value);
+        break;
+    case kRegTac:
+        timer_.write_tac(value);
+        break;
     case kRegIf:
-        if_ = static_cast<uint8_t>(value & kIntMask);
+        irq_.write(value);
         break;
     case kRegDma: {
         dma_ = value;

@@ -29,6 +29,7 @@ void Gameboy::run_frame() {
                 // cpu trapped an unknown opcode and stopped
                 break;
             }
+            timer_.tick(t);
             elapsed += t;
         }
         cycles_ += elapsed;
