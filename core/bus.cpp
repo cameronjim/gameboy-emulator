@@ -11,7 +11,7 @@ uint8_t Bus::read8(uint16_t addr) {
         return mapper_ != nullptr ? mapper_->read_rom(addr) : 0xFF;
     }
     if (addr <= 0x9FFF) {
-        return vram_[addr - 0x8000];
+        return ppu_.read_vram(static_cast<uint16_t>(addr - 0x8000));
     }
     if (addr <= 0xBFFF) {
         return mapper_ != nullptr ? mapper_->read_ram(static_cast<uint16_t>(addr - 0xA000)) : 0xFF;
@@ -24,7 +24,7 @@ uint8_t Bus::read8(uint16_t addr) {
         return wram_[addr - 0xE000];
     }
     if (addr <= 0xFE9F) {
-        return oam_[addr - 0xFE00];
+        return ppu_.read_oam(static_cast<uint16_t>(addr - 0xFE00));
     }
     if (addr <= 0xFEFF) {
         // unusable region
@@ -47,7 +47,7 @@ void Bus::write8(uint16_t addr, uint8_t value) {
         return;
     }
     if (addr <= 0x9FFF) {
-        vram_[addr - 0x8000] = value;
+        ppu_.write_vram(static_cast<uint16_t>(addr - 0x8000), value);
         return;
     }
     if (addr <= 0xBFFF) {
@@ -65,7 +65,7 @@ void Bus::write8(uint16_t addr, uint8_t value) {
         return;
     }
     if (addr <= 0xFE9F) {
-        oam_[addr - 0xFE00] = value;
+        ppu_.write_oam(static_cast<uint16_t>(addr - 0xFE00), value);
         return;
     }
     if (addr <= 0xFEFF) {
@@ -107,6 +107,14 @@ uint8_t Bus::read_io(uint16_t addr) {
         return timer_.read_tma();
     case kRegTac:
         return timer_.read_tac();
+    case kRegLcdc:
+    case kRegStat:
+    case kRegScy:
+    case kRegScx:
+    case kRegLy:
+    case kRegLyc:
+    case kRegBgp:
+        return ppu_.read_register(addr);
     case kRegIf:
         // upper 3 bits read as 1
         return static_cast<uint8_t>(0xE0 | irq_.read());
@@ -138,6 +146,15 @@ void Bus::write_io(uint16_t addr, uint8_t value) {
     case kRegTac:
         timer_.write_tac(value);
         break;
+    case kRegLcdc:
+    case kRegStat:
+    case kRegScy:
+    case kRegScx:
+    case kRegLy:
+    case kRegLyc:
+    case kRegBgp:
+        ppu_.write_register(addr, value);
+        break;
     case kRegIf:
         irq_.write(value);
         break;
@@ -146,7 +163,7 @@ void Bus::write_io(uint16_t addr, uint8_t value) {
         // v1 decision: instant copy of 160 bytes from xx00
         const uint16_t src = static_cast<uint16_t>(value << 8);
         for (uint8_t i = 0; i < 0xA0; ++i) {
-            oam_[i] = read8(static_cast<uint16_t>(src + i));
+            ppu_.write_oam(i, read8(static_cast<uint16_t>(src + i)));
         }
         break;
     }

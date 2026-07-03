@@ -4,6 +4,7 @@
 #include "cartridge.hpp"
 #include "cpu.hpp"
 #include "interrupts.hpp"
+#include "ppu.hpp"
 #include "serial.hpp"
 #include "timer.hpp"
 
@@ -13,9 +14,6 @@
 #include <span>
 
 namespace gb {
-
-inline constexpr uint32_t kLcdWidth = 160;
-inline constexpr uint32_t kLcdHeight = 144;
 
 enum class Button : uint8_t { Right, Left, Up, Down, A, B, Select, Start };
 
@@ -29,6 +27,10 @@ public:
     uint64_t cycles() const {
         return cycles_;
     }
+    // debug accessor for the frontend tile viewer
+    std::span<const uint8_t> debug_vram() const {
+        return ppu_.vram();
+    }
 
 private:
     void render_test_pattern();
@@ -36,11 +38,12 @@ private:
     Serial serial_;
     InterruptLine irq_;
     Timer timer_{irq_};
-    Bus bus_{serial_, timer_, irq_};
+    Ppu ppu_{irq_};
+    Bus bus_{serial_, timer_, ppu_, irq_};
     Cpu cpu_{bus_};
     std::optional<Cartridge> cart_;
     uint64_t cycles_ = 0;
-    std::array<uint8_t, kLcdWidth * kLcdHeight> framebuffer_{};
+    std::array<uint8_t, kLcdWidth * kLcdHeight> pattern_{};
 };
 
 } // namespace gb

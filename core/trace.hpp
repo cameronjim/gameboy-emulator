@@ -2,14 +2,12 @@
 
 #include "cpu.hpp"
 #include "memory.hpp"
+#include "ppu.hpp"
 
 #include <cstdint>
 #include <string>
 
 namespace gb {
-
-// ppu owns this register from milestone 07; doctor mode needs the address now
-inline constexpr uint16_t kRegLy = 0xFF44;
 
 // doctor reference logs assume no ppu, so ly reads a fixed 0x90
 class DoctorMemory final : public Memory {

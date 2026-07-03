@@ -30,15 +30,17 @@ void Gameboy::run_frame() {
                 break;
             }
             timer_.tick(t);
+            ppu_.tick(t);
             elapsed += t;
         }
         cycles_ += elapsed;
+        return;
     }
     render_test_pattern();
 }
 
 std::span<const uint8_t> Gameboy::framebuffer() const {
-    return framebuffer_;
+    return cart_.has_value() ? ppu_.framebuffer() : std::span<const uint8_t>(pattern_);
 }
 
 void Gameboy::set_button(Button, bool) {}
@@ -48,10 +50,10 @@ void Gameboy::set_serial_sink(Serial::Sink sink) {
 }
 
 void Gameboy::render_test_pattern() {
-    // fixed four-band test pattern until the ppu exists
+    // four-band pattern shown only when no cartridge is loaded
     for (uint32_t y = 0; y < kLcdHeight; ++y) {
         for (uint32_t x = 0; x < kLcdWidth; ++x) {
-            framebuffer_[y * kLcdWidth + x] = static_cast<uint8_t>(x / kBandWidth);
+            pattern_[y * kLcdWidth + x] = static_cast<uint8_t>(x / kBandWidth);
         }
     }
 }
