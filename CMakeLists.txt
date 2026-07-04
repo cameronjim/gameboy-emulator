@@ -40,13 +40,16 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(catch2)
 
 enable_testing()
+# palette helper is header-only frontend code, unit-tested per milestone 08
 add_executable(gbcore_tests tests/unit/bus_test.cpp tests/unit/cartridge_test.cpp
                             tests/unit/cpu_alu_test.cpp tests/unit/cpu_blargg_smoke_test.cpp
                             tests/unit/cpu_decode_test.cpp tests/unit/cpu_test.cpp
                             tests/unit/gameboy_test.cpp tests/unit/mapper_rom_test.cpp
-                            tests/unit/ppu_test.cpp tests/unit/smoke_test.cpp tests/unit/timer_test.cpp
+                            tests/unit/palette_test.cpp tests/unit/ppu_test.cpp
+                            tests/unit/smoke_test.cpp tests/unit/timer_test.cpp
                             tests/unit/trace_test.cpp)
 target_compile_options(gbcore_tests PRIVATE ${GB_WARNING_FLAGS})
+target_include_directories(gbcore_tests PRIVATE frontend/sdl)
 target_link_libraries(gbcore_tests PRIVATE gbcore Catch2::Catch2WithMain)
 
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
