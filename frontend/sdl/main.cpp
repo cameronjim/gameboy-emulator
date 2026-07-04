@@ -1,6 +1,7 @@
 #include "cartridge.hpp"
 #include "cpu.hpp"
 #include "gameboy.hpp"
+#include "palette.hpp"
 #include "trace.hpp"
 
 #include <SDL.h>
@@ -23,7 +24,6 @@ namespace {
 constexpr int kScale = 4;
 constexpr int kWidth = static_cast<int>(gb::kLcdWidth);
 constexpr int kHeight = static_cast<int>(gb::kLcdHeight);
-constexpr std::array<uint32_t, 4> kPalette = {0xFFE0F8D0u, 0xFF88C070u, 0xFF346856u, 0xFF081820u};
 // largest licensed gb rom is 8mb
 constexpr std::streamoff kMaxRomFileSize = 8 * 1024 * 1024;
 
@@ -74,6 +74,7 @@ struct Options {
     const char* rom_path = nullptr;
     const char* doctor_path = nullptr;
     const char* dump_ppm_path = nullptr;
+    const char* palette_name = "green";
     uint64_t trace_from = 0;
     uint64_t frames = 600;
     bool ok = true;
@@ -91,6 +92,8 @@ Options parse_args(int argc, char* argv[]) {
             opt.dump_ppm_path = argv[++i];
         } else if (arg == "--frames" && i + 1 < argc) {
             opt.frames = std::strtoull(argv[++i], nullptr, 10);
+        } else if (arg == "--palette" && i + 1 < argc) {
+            opt.palette_name = argv[++i];
         } else if (!arg.empty() && arg[0] == '-') {
             opt.ok = false;
         } else {
@@ -112,26 +115,99 @@ struct FlatMemory final : gb::Memory {
     std::array<uint8_t, 0x10000> mem{};
 };
 
-// debug hook: run headless for n frames, then dump the framebuffer as a ppm
-int dump_framebuffer_ppm(gb::Gameboy& gameboy, uint64_t frames, const char* path) {
-    for (uint64_t i = 0; i < frames; ++i) {
-        gameboy.run_frame();
-    }
+bool write_ppm(std::span<const uint8_t> fb, const Palette& palette, const char* path) {
     std::ofstream out(path, std::ios::binary);
     if (!out) {
         std::fprintf(stderr, "cannot open %s\n", path);
-        return 1;
+        return false;
     }
     out << "P6\n" << gb::kLcdWidth << " " << gb::kLcdHeight << "\n255\n";
-    for (uint8_t index : gameboy.framebuffer()) {
-        const uint32_t rgb = kPalette[index & 0x3u];
+    for (uint8_t index : fb) {
+        const uint32_t rgb = map_shade(palette, index);
         const char px[3] = {static_cast<char>(rgb >> 16), static_cast<char>(rgb >> 8),
                             static_cast<char>(rgb)};
         out.write(px, 3);
     }
-    std::printf("wrote %s after %llu frames\n", path, static_cast<unsigned long long>(frames));
-    return 0;
+    std::printf("wrote %s\n", path);
+    return true;
 }
+
+// debug hook: run headless for n frames, then dump the framebuffer as a ppm
+int dump_framebuffer_ppm(gb::Gameboy& gameboy, uint64_t frames, const Palette& palette, const char* path) {
+    for (uint64_t i = 0; i < frames; ++i) {
+        gameboy.run_frame();
+    }
+    return write_ppm(gameboy.framebuffer(), palette, path) ? 0 : 1;
+}
+
+// second window: all 384 tiles as a 16x24 grid, decoded straight from vram
+class TileViewer {
+public:
+    bool visible() const {
+        return window_ != nullptr;
+    }
+    uint32_t window_id() const {
+        return window_ != nullptr ? SDL_GetWindowID(window_) : 0;
+    }
+    void toggle() {
+        if (visible()) {
+            close();
+            return;
+        }
+        window_ = SDL_CreateWindow("tiles", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, kTilesW * 3,
+                                   kTilesH * 3, 0);
+        if (window_ == nullptr) {
+            return;
+        }
+        renderer_ = SDL_CreateRenderer(window_, -1, SDL_RENDERER_ACCELERATED);
+        const uint32_t format = SDL_PIXELFORMAT_ARGB8888;
+        texture_ = SDL_CreateTexture(renderer_, format, SDL_TEXTUREACCESS_STREAMING, kTilesW, kTilesH);
+    }
+    void close() {
+        if (texture_ != nullptr) {
+            SDL_DestroyTexture(texture_);
+            texture_ = nullptr;
+        }
+        if (renderer_ != nullptr) {
+            SDL_DestroyRenderer(renderer_);
+            renderer_ = nullptr;
+        }
+        if (window_ != nullptr) {
+            SDL_DestroyWindow(window_);
+            window_ = nullptr;
+        }
+    }
+    void render(std::span<const uint8_t> vram, const Palette& palette) {
+        if (!visible() || renderer_ == nullptr || texture_ == nullptr) {
+            return;
+        }
+        for (uint32_t tile = 0; tile < 384; ++tile) {
+            const uint32_t tx = (tile % 16) * 8;
+            const uint32_t ty = (tile / 16) * 8;
+            for (uint32_t row = 0; row < 8; ++row) {
+                const uint8_t lo = vram[tile * 16 + row * 2];
+                const uint8_t hi = vram[tile * 16 + row * 2 + 1];
+                for (uint32_t px = 0; px < 8; ++px) {
+                    const uint8_t color =
+                        static_cast<uint8_t>((((hi >> (7 - px)) & 1) << 1) | ((lo >> (7 - px)) & 1));
+                    pixels_[(ty + row) * kTilesW + tx + px] = map_shade(palette, color);
+                }
+            }
+        }
+        SDL_UpdateTexture(texture_, nullptr, pixels_.data(), kTilesW * 4);
+        SDL_RenderClear(renderer_);
+        SDL_RenderCopy(renderer_, texture_, nullptr, nullptr);
+        SDL_RenderPresent(renderer_);
+    }
+
+private:
+    static constexpr int kTilesW = 128;
+    static constexpr int kTilesH = 192;
+    SDL_Window* window_ = nullptr;
+    SDL_Renderer* renderer_ = nullptr;
+    SDL_Texture* texture_ = nullptr;
+    std::array<uint32_t, kTilesW * kTilesH> pixels_{};
+};
 
 int run_doctor(std::span<const uint8_t> rom, const char* out_path, uint64_t trace_from) {
     // cap covers the longest cpu_instrs subtest; logs get huge, flush in blocks
@@ -173,7 +249,8 @@ int run_doctor(std::span<const uint8_t> rom, const char* out_path, uint64_t trac
 int main(int argc, char* argv[]) {
     const Options opt = parse_args(argc, argv);
     if (!opt.ok || (opt.doctor_path != nullptr && opt.rom_path == nullptr)) {
-        std::fprintf(stderr, "usage: gbemu-sdl [--doctor <path>] [--trace-from <n>] [rom]\n");
+        std::fprintf(stderr, "usage: gbemu-sdl [--doctor <path>] [--trace-from <n>] [--dump-ppm <path>] "
+                             "[--frames <n>] [--palette green|gray] [rom]\n");
         return 1;
     }
 
@@ -198,7 +275,8 @@ int main(int argc, char* argv[]) {
         // test rom output channel
         gameboy.set_serial_sink([](uint8_t b) { std::fputc(b, stdout); });
         if (opt.dump_ppm_path != nullptr) {
-            return dump_framebuffer_ppm(gameboy, opt.frames, opt.dump_ppm_path);
+            return dump_framebuffer_ppm(gameboy, opt.frames, palette_by_name(opt.palette_name),
+                                        opt.dump_ppm_path);
         }
     }
 
@@ -237,6 +315,8 @@ int main(int argc, char* argv[]) {
 
     std::array<uint32_t, gb::kLcdWidth * gb::kLcdHeight> pixels{};
 
+    const Palette& palette = palette_by_name(opt.palette_name);
+    TileViewer tile_viewer;
     bool running = true;
     while (running) {
         SDL_Event event;
@@ -244,23 +324,40 @@ int main(int argc, char* argv[]) {
             if (event.type == SDL_QUIT) {
                 running = false;
             }
-            if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) {
-                running = false;
+            if (event.type == SDL_KEYDOWN) {
+                if (event.key.keysym.sym == SDLK_ESCAPE) {
+                    running = false;
+                }
+                if (event.key.keysym.sym == SDLK_p) {
+                    write_ppm(gameboy.framebuffer(), palette, "framebuffer.ppm");
+                }
+                if (event.key.keysym.sym == SDLK_t) {
+                    tile_viewer.toggle();
+                }
+            }
+            if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE) {
+                if (tile_viewer.visible() && event.window.windowID == tile_viewer.window_id()) {
+                    tile_viewer.close();
+                } else {
+                    running = false;
+                }
             }
         }
 
         gameboy.run_frame();
         const std::span<const uint8_t> fb = gameboy.framebuffer();
         for (size_t i = 0; i < pixels.size(); ++i) {
-            pixels[i] = kPalette[fb[i] & 0x3u];
+            pixels[i] = map_shade(palette, fb[i]);
         }
 
         SDL_UpdateTexture(texture, nullptr, pixels.data(), kWidth * 4);
         SDL_RenderClear(renderer);
         SDL_RenderCopy(renderer, texture, nullptr, nullptr);
         SDL_RenderPresent(renderer);
+        tile_viewer.render(gameboy.debug_vram(), palette);
     }
 
+    tile_viewer.close();
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
