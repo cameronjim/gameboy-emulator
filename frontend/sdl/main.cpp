@@ -73,7 +73,9 @@ bool print_cartridge(std::span<const uint8_t> bytes) {
 struct Options {
     const char* rom_path = nullptr;
     const char* doctor_path = nullptr;
+    const char* dump_ppm_path = nullptr;
     uint64_t trace_from = 0;
+    uint64_t frames = 600;
     bool ok = true;
 };
 
@@ -85,6 +87,10 @@ Options parse_args(int argc, char* argv[]) {
             opt.doctor_path = argv[++i];
         } else if (arg == "--trace-from" && i + 1 < argc) {
             opt.trace_from = std::strtoull(argv[++i], nullptr, 10);
+        } else if (arg == "--dump-ppm" && i + 1 < argc) {
+            opt.dump_ppm_path = argv[++i];
+        } else if (arg == "--frames" && i + 1 < argc) {
+            opt.frames = std::strtoull(argv[++i], nullptr, 10);
         } else if (!arg.empty() && arg[0] == '-') {
             opt.ok = false;
         } else {
@@ -105,6 +111,27 @@ struct FlatMemory final : gb::Memory {
 
     std::array<uint8_t, 0x10000> mem{};
 };
+
+// debug hook: run headless for n frames, then dump the framebuffer as a ppm
+int dump_framebuffer_ppm(gb::Gameboy& gameboy, uint64_t frames, const char* path) {
+    for (uint64_t i = 0; i < frames; ++i) {
+        gameboy.run_frame();
+    }
+    std::ofstream out(path, std::ios::binary);
+    if (!out) {
+        std::fprintf(stderr, "cannot open %s\n", path);
+        return 1;
+    }
+    out << "P6\n" << gb::kLcdWidth << " " << gb::kLcdHeight << "\n255\n";
+    for (uint8_t index : gameboy.framebuffer()) {
+        const uint32_t rgb = kPalette[index & 0x3u];
+        const char px[3] = {static_cast<char>(rgb >> 16), static_cast<char>(rgb >> 8),
+                            static_cast<char>(rgb)};
+        out.write(px, 3);
+    }
+    std::printf("wrote %s after %llu frames\n", path, static_cast<unsigned long long>(frames));
+    return 0;
+}
 
 int run_doctor(std::span<const uint8_t> rom, const char* out_path, uint64_t trace_from) {
     // cap covers the longest cpu_instrs subtest; logs get huge, flush in blocks
@@ -170,6 +197,9 @@ int main(int argc, char* argv[]) {
         }
         // test rom output channel
         gameboy.set_serial_sink([](uint8_t b) { std::fputc(b, stdout); });
+        if (opt.dump_ppm_path != nullptr) {
+            return dump_framebuffer_ppm(gameboy, opt.frames, opt.dump_ppm_path);
+        }
     }
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
