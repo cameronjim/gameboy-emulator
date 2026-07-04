@@ -18,6 +18,10 @@ inline constexpr uint16_t kRegScx = 0xFF43;
 inline constexpr uint16_t kRegLy = 0xFF44;
 inline constexpr uint16_t kRegLyc = 0xFF45;
 inline constexpr uint16_t kRegBgp = 0xFF47;
+inline constexpr uint16_t kRegObp0 = 0xFF48;
+inline constexpr uint16_t kRegObp1 = 0xFF49;
+inline constexpr uint16_t kRegWy = 0xFF4A;
+inline constexpr uint16_t kRegWx = 0xFF4B;
 
 enum class PpuMode : uint8_t { HBlank = 0, VBlank = 1, OamScan = 2, Drawing = 3 };
 
@@ -63,6 +67,9 @@ private:
     void enter_mode(PpuMode mode);
     void compare_lyc();
     void render_scanline();
+    void render_bg(std::span<uint8_t> colors) const;
+    bool render_window(std::span<uint8_t> colors) const;
+    void render_sprites(std::span<const uint8_t> colors, std::span<uint8_t> row) const;
 
     InterruptLine& irq_;
     std::array<uint8_t, 0x2000> vram_{};
@@ -76,6 +83,13 @@ private:
     uint8_t bgp_ = 0xFC;
     uint8_t scy_ = 0;
     uint8_t scx_ = 0;
+    // hardware leaves obp undefined at power-up
+    uint8_t obp0_ = 0x00;
+    uint8_t obp1_ = 0x00;
+    uint8_t wy_ = 0;
+    uint8_t wx_ = 0;
+    // internal window line, advances only on lines the window rendered
+    uint8_t window_line_ = 0;
     // writable stat bits 3-6 only
     uint8_t stat_enables_ = 0;
     PpuMode mode_ = PpuMode::OamScan;

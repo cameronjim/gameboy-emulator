@@ -36,6 +36,9 @@ void Ppu::tick(uint32_t tcycles) {
     while (dot_ >= kDotsPerLine) {
         dot_ -= kDotsPerLine;
         ly_ = static_cast<uint8_t>((ly_ + 1) % kLinesPerFrame);
+        if (ly_ == 0) {
+            window_line_ = 0;
+        }
         if (ly_ == kFirstVBlankLine) {
             irq_.request(kIntVBlank);
             if ((stat_enables_ & kStatVBlankEnable) != 0) {
@@ -97,6 +100,14 @@ uint8_t Ppu::read_register(uint16_t addr) const {
         return lyc_;
     case kRegBgp:
         return bgp_;
+    case kRegObp0:
+        return obp0_;
+    case kRegObp1:
+        return obp1_;
+    case kRegWy:
+        return wy_;
+    case kRegWx:
+        return wx_;
     default:
         return 0xFF;
     }
@@ -134,6 +145,18 @@ void Ppu::write_register(uint16_t addr, uint8_t value) {
     case kRegBgp:
         bgp_ = value;
         break;
+    case kRegObp0:
+        obp0_ = value;
+        break;
+    case kRegObp1:
+        obp1_ = value;
+        break;
+    case kRegWy:
+        wy_ = value;
+        break;
+    case kRegWx:
+        wx_ = value;
+        break;
     default:
         break;
     }
@@ -141,13 +164,23 @@ void Ppu::write_register(uint16_t addr, uint8_t value) {
 
 void Ppu::render_scanline() {
     uint8_t* row = &framebuffer_[static_cast<uint32_t>(ly_) * kLcdWidth];
-    if ((lcdc_ & 0x01) == 0) {
-        // bg disabled draws blank white
-        for (uint32_t x = 0; x < kLcdWidth; ++x) {
-            row[x] = 0;
+    // raw 2-bit bg/window colors kept for sprite priority decisions
+    std::array<uint8_t, kLcdWidth> colors{};
+    if ((lcdc_ & 0x01) != 0) {
+        render_bg(colors);
+        if (render_window(colors)) {
+            ++window_line_;
         }
-        return;
     }
+    for (uint32_t x = 0; x < kLcdWidth; ++x) {
+        row[x] = static_cast<uint8_t>((bgp_ >> (colors[x] * 2)) & 0x03);
+    }
+    if ((lcdc_ & 0x02) != 0) {
+        render_sprites(colors, std::span<uint8_t>(row, kLcdWidth));
+    }
+}
+
+void Ppu::render_bg(std::span<uint8_t> colors) const {
     const uint16_t map_base = (lcdc_ & 0x08) != 0 ? 0x1C00 : 0x1800;
     const bool unsigned_mode = (lcdc_ & 0x10) != 0;
     const uint8_t bgy = static_cast<uint8_t>(scy_ + ly_);
@@ -166,8 +199,102 @@ void Ppu::render_scanline() {
         const uint8_t hi = vram_[tile_addr + row_in_tile * 2 + 1];
         // bit 7 is the leftmost pixel
         const uint8_t px = bgx & 7;
-        const uint8_t color = static_cast<uint8_t>((((hi >> (7 - px)) & 1) << 1) | ((lo >> (7 - px)) & 1));
-        row[x] = static_cast<uint8_t>((bgp_ >> (color * 2)) & 0x03);
+        colors[x] = static_cast<uint8_t>((((hi >> (7 - px)) & 1) << 1) | ((lo >> (7 - px)) & 1));
+    }
+}
+
+bool Ppu::render_window(std::span<uint8_t> colors) const {
+    if ((lcdc_ & 0x20) == 0 || ly_ < wy_ || wx_ > 166) {
+        return false;
+    }
+    const uint16_t map_base = (lcdc_ & 0x40) != 0 ? 0x1C00 : 0x1800;
+    const bool unsigned_mode = (lcdc_ & 0x10) != 0;
+    const uint8_t row_in_tile = window_line_ & 7;
+    // wx has a fixed -7 offset
+    const int start_x = static_cast<int>(wx_) - 7;
+    for (int x = std::max(0, start_x); x < static_cast<int>(kLcdWidth); ++x) {
+        const uint32_t wx_pixel = static_cast<uint32_t>(x - start_x);
+        const uint8_t tile = vram_[map_base + (window_line_ / 8) * 32 + (wx_pixel / 8)];
+        uint16_t tile_addr;
+        if (unsigned_mode) {
+            tile_addr = static_cast<uint16_t>(tile * 16);
+        } else {
+            tile_addr = static_cast<uint16_t>(0x1000 + static_cast<int8_t>(tile) * 16);
+        }
+        const uint8_t lo = vram_[tile_addr + row_in_tile * 2];
+        const uint8_t hi = vram_[tile_addr + row_in_tile * 2 + 1];
+        const uint8_t px = wx_pixel & 7;
+        colors[static_cast<uint32_t>(x)] =
+            static_cast<uint8_t>((((hi >> (7 - px)) & 1) << 1) | ((lo >> (7 - px)) & 1));
+    }
+    return true;
+}
+
+void Ppu::render_sprites(std::span<const uint8_t> colors, std::span<uint8_t> row) const {
+    const uint8_t height = (lcdc_ & 0x04) != 0 ? 16 : 8;
+    const int line = static_cast<int>(ly_) + 16;
+    // mode 2 selection: first 10 by oam order whose y-range covers the line
+    std::array<uint8_t, 10> selected{};
+    uint32_t count = 0;
+    for (uint8_t i = 0; i < 40 && count < 10; ++i) {
+        const int oam_y = oam_[i * 4];
+        if (line >= oam_y && line < oam_y + height) {
+            selected[count++] = i;
+        }
+    }
+    // dmg priority: lower x wins, then earlier oam; draw lowest priority first
+    const auto draws_before = [this](uint8_t a, uint8_t b) {
+        if (oam_[a * 4 + 1] != oam_[b * 4 + 1]) {
+            return oam_[a * 4 + 1] > oam_[b * 4 + 1];
+        }
+        return a > b;
+    };
+    for (uint32_t i = 1; i < count; ++i) {
+        const uint8_t key = selected[i];
+        uint32_t j = i;
+        while (j > 0 && draws_before(key, selected[j - 1])) {
+            selected[j] = selected[j - 1];
+            --j;
+        }
+        selected[j] = key;
+    }
+    for (uint32_t s = 0; s < count; ++s) {
+        const uint8_t* entry = &oam_[selected[s] * 4];
+        const int sprite_x = static_cast<int>(entry[1]) - 8;
+        const uint8_t attr = entry[3];
+        uint8_t sprite_row = static_cast<uint8_t>(line - entry[0]);
+        if ((attr & 0x40) != 0) {
+            sprite_row = static_cast<uint8_t>(height - 1 - sprite_row);
+        }
+        uint8_t tile = entry[2];
+        if (height == 16) {
+            // 8x16: index low bit ignored
+            tile = static_cast<uint8_t>(tile & 0xFE);
+            if (sprite_row >= 8) {
+                tile = static_cast<uint8_t>(tile + 1);
+                sprite_row = static_cast<uint8_t>(sprite_row - 8);
+            }
+        }
+        const uint8_t lo = vram_[tile * 16 + sprite_row * 2];
+        const uint8_t hi = vram_[tile * 16 + sprite_row * 2 + 1];
+        const uint8_t obp = (attr & 0x10) != 0 ? obp1_ : obp0_;
+        for (uint8_t px = 0; px < 8; ++px) {
+            const int x = sprite_x + px;
+            if (x < 0 || x >= static_cast<int>(kLcdWidth)) {
+                continue;
+            }
+            const uint8_t bit = (attr & 0x20) != 0 ? px : static_cast<uint8_t>(7 - px);
+            const uint8_t color = static_cast<uint8_t>((((hi >> bit) & 1) << 1) | ((lo >> bit) & 1));
+            if (color == 0) {
+                // sprite color 0 is always transparent
+                continue;
+            }
+            if ((attr & 0x80) != 0 && colors[static_cast<uint32_t>(x)] != 0) {
+                // bg-over-obj: nonzero bg colors stay on top
+                continue;
+            }
+            row[static_cast<uint32_t>(x)] = static_cast<uint8_t>((obp >> (color * 2)) & 0x03);
+        }
     }
 }
 
