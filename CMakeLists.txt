@@ -14,8 +14,8 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32)
 endif()
 
 add_library(gbcore STATIC core/bus.cpp core/cartridge.cpp core/cpu.cpp core/gameboy.cpp
-                          core/mapper_rom.cpp core/ppu.cpp core/serial.cpp core/timer.cpp
-                          core/trace.cpp)
+                          core/joypad.cpp core/mapper_rom.cpp core/ppu.cpp core/serial.cpp
+                          core/timer.cpp core/trace.cpp)
 target_include_directories(gbcore PUBLIC core)
 target_compile_options(gbcore PRIVATE ${GB_WARNING_FLAGS})
 
@@ -44,7 +44,8 @@ enable_testing()
 add_executable(gbcore_tests tests/unit/bus_test.cpp tests/unit/cartridge_test.cpp
                             tests/unit/cpu_alu_test.cpp tests/unit/cpu_blargg_smoke_test.cpp
                             tests/unit/cpu_decode_test.cpp tests/unit/cpu_test.cpp
-                            tests/unit/gameboy_test.cpp tests/unit/mapper_rom_test.cpp
+                            tests/unit/gameboy_test.cpp tests/unit/joypad_test.cpp
+                            tests/unit/mapper_rom_test.cpp
                             tests/unit/palette_test.cpp tests/unit/ppu_test.cpp
                             tests/unit/smoke_test.cpp tests/unit/timer_test.cpp
                             tests/unit/trace_test.cpp)
