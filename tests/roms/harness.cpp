@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -26,6 +27,38 @@ std::vector<uint8_t> read_file(const char* path) {
         return {};
     }
     return bytes;
+}
+
+uint64_t fnv1a(std::span<const uint8_t> bytes) {
+    uint64_t hash = 1469598103934665603ull;
+    for (uint8_t b : bytes) {
+        hash ^= b;
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+// framebuffer channel: run a fixed frame count, hash the index buffer, dump a ppm on mismatch
+int run_framebuffer(gb::Gameboy& gameboy, const std::string& expect, uint64_t frames, const char* rom_path) {
+    for (uint64_t i = 0; i < frames; ++i) {
+        gameboy.run_frame();
+    }
+    char got[17];
+    std::snprintf(got, sizeof(got), "%016llx", static_cast<unsigned long long>(fnv1a(gameboy.framebuffer())));
+    if (expect == got) {
+        std::printf("PASS %s\n", rom_path);
+        return 0;
+    }
+    std::ofstream ppm("framebuffer-mismatch.ppm", std::ios::binary);
+    ppm << "P6\n160 144\n255\n";
+    for (uint8_t index : gameboy.framebuffer()) {
+        const char v = static_cast<char>(255 - index * 85);
+        const char px[3] = {v, v, v};
+        ppm.write(px, 3);
+    }
+    std::fprintf(stderr, "FAIL %s\nexpected %s got %s, wrote framebuffer-mismatch.ppm\n", rom_path,
+                 expect.c_str(), got);
+    return 1;
 }
 
 int run_serial(gb::Gameboy& gameboy, const std::string& expect, uint64_t budget, const char* rom_path) {
@@ -72,7 +105,11 @@ int main(int argc, char* argv[]) {
     if (channel == "serial") {
         return run_serial(gameboy, expect, budget, rom_path);
     }
-    // fibonacci and framebuffer channels arrive with milestones 06 and 10
+    if (channel == "framebuffer") {
+        // the budget column carries the frame count for this channel
+        return run_framebuffer(gameboy, expect, budget, rom_path);
+    }
+    // fibonacci channel arrives when a mooneye rom needs it
     std::fprintf(stderr, "channel %s not implemented\n", channel.c_str());
     return 2;
 }
