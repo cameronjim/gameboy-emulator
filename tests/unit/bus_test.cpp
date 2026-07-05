@@ -18,7 +18,8 @@ struct Rig {
     gb::InterruptLine irq;
     gb::Timer timer{irq};
     gb::Ppu ppu{irq};
-    gb::Bus bus{serial, timer, ppu, irq};
+    gb::Joypad joypad;
+    gb::Bus bus{serial, timer, ppu, joypad, irq};
 };
 
 } // namespace
@@ -51,7 +52,7 @@ TEST_CASE("unusable_region_reads_ff_ignores_writes") {
 TEST_CASE("unmapped_io_reads_ff") {
     Rig rig;
     REQUIRE(rig.bus.read8(0xFF10) == 0xFF);
-    REQUIRE(rig.bus.read8(0xFF48) == 0xFF);
+    REQUIRE(rig.bus.read8(0xFF4C) == 0xFF);
     REQUIRE(rig.bus.read8(0xFF7F) == 0xFF);
 }
 

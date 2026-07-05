@@ -324,6 +324,37 @@ int main(int argc, char* argv[]) {
             if (event.type == SDL_QUIT) {
                 running = false;
             }
+            if ((event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) && event.key.repeat == 0) {
+                const bool down = event.type == SDL_KEYDOWN;
+                switch (event.key.keysym.sym) {
+                case SDLK_RIGHT:
+                    gameboy.set_button(gb::Button::Right, down);
+                    break;
+                case SDLK_LEFT:
+                    gameboy.set_button(gb::Button::Left, down);
+                    break;
+                case SDLK_UP:
+                    gameboy.set_button(gb::Button::Up, down);
+                    break;
+                case SDLK_DOWN:
+                    gameboy.set_button(gb::Button::Down, down);
+                    break;
+                case SDLK_z:
+                    gameboy.set_button(gb::Button::A, down);
+                    break;
+                case SDLK_x:
+                    gameboy.set_button(gb::Button::B, down);
+                    break;
+                case SDLK_RETURN:
+                    gameboy.set_button(gb::Button::Start, down);
+                    break;
+                case SDLK_RSHIFT:
+                    gameboy.set_button(gb::Button::Select, down);
+                    break;
+                default:
+                    break;
+                }
+            }
             if (event.type == SDL_KEYDOWN) {
                 if (event.key.keysym.sym == SDLK_ESCAPE) {
                     running = false;

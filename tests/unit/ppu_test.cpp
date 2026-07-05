@@ -30,6 +30,25 @@ struct Rig {
     void render_line0() {
         ppu.tick(80 + 1);
     }
+    // instruction-sized ticks so every mode transition renders
+    void tick_lines(uint32_t lines) {
+        for (uint32_t i = 0; i < lines * 456 / 4; ++i) {
+            ppu.tick(4);
+        }
+    }
+    void set_oam(uint8_t index, uint8_t y, uint8_t x, uint8_t tile, uint8_t attr) {
+        ppu.write_oam(static_cast<uint16_t>(index * 4), y);
+        ppu.write_oam(static_cast<uint16_t>(index * 4 + 1), x);
+        ppu.write_oam(static_cast<uint16_t>(index * 4 + 2), tile);
+        ppu.write_oam(static_cast<uint16_t>(index * 4 + 3), attr);
+    }
+    // sprites enabled, bg enabled, unsigned tiles
+    void sprite_setup() {
+        ppu.write_register(gb::kRegLcdc, 0x93);
+        ppu.write_register(gb::kRegBgp, 0xE4);
+        ppu.write_register(gb::kRegObp0, 0xE4);
+        ppu.write_register(gb::kRegObp1, 0xE4);
+    }
 };
 
 } // namespace
@@ -138,6 +157,151 @@ TEST_CASE("bgp_palette_applies") {
     rig.set_tile_row(0x0010, 0, 0xFF, 0x00);
     rig.render_line0();
     REQUIRE(rig.ppu.framebuffer()[0] == 3);
+}
+
+TEST_CASE("oam_offsets_y16_x8") {
+    Rig rig;
+    rig.sprite_setup();
+    rig.set_tile_row(0x0010, 0, 0xFF, 0x00);
+    // oam y 16, x 8 puts the sprite at screen (0, 0)
+    rig.set_oam(0, 16, 8, 1, 0x00);
+    rig.render_line0();
+    REQUIRE(rig.ppu.framebuffer()[0] == 1);
+    REQUIRE(rig.ppu.framebuffer()[7] == 1);
+    REQUIRE(rig.ppu.framebuffer()[8] == 0);
+}
+
+TEST_CASE("sprite_limit_first_ten_in_oam_order") {
+    Rig rig;
+    rig.sprite_setup();
+    rig.set_tile_row(0x0010, 0, 0xFF, 0x00);
+    for (uint8_t i = 0; i < 11; ++i) {
+        rig.set_oam(i, 16, static_cast<uint8_t>(8 + i * 8), 1, 0x00);
+    }
+    rig.render_line0();
+    // sprites 0..9 render, the 11th is dropped
+    REQUIRE(rig.ppu.framebuffer()[9 * 8] == 1);
+    REQUIRE(rig.ppu.framebuffer()[10 * 8] == 0);
+}
+
+TEST_CASE("sprite_color0_transparent") {
+    Rig rig;
+    rig.sprite_setup();
+    // bg color 1 everywhere in tile 2
+    rig.ppu.write_vram(0x1800, 2);
+    rig.set_tile_row(0x0020, 0, 0xFF, 0x00);
+    // sprite tile 1 row: left half color 0, right half color 3
+    rig.set_tile_row(0x0010, 0, 0x0F, 0x0F);
+    rig.set_oam(0, 16, 8, 1, 0x00);
+    rig.render_line0();
+    // transparent sprite pixels leave the bg visible
+    REQUIRE(rig.ppu.framebuffer()[0] == 1);
+    REQUIRE(rig.ppu.framebuffer()[4] == 3);
+}
+
+TEST_CASE("bg_over_obj_priority_bit") {
+    Rig rig;
+    rig.sprite_setup();
+    // bg: color 2 in the left tile, color 0 in the next
+    rig.ppu.write_vram(0x1800, 2);
+    rig.set_tile_row(0x0020, 0, 0x00, 0xFF);
+    rig.set_tile_row(0x0010, 0, 0xFF, 0x00);
+    rig.set_oam(0, 16, 8, 1, 0x80);
+    rig.set_oam(1, 16, 16, 1, 0x80);
+    rig.render_line0();
+    // nonzero bg wins under the priority bit, zero bg lets the sprite through
+    REQUIRE(rig.ppu.framebuffer()[0] == 2);
+    REQUIRE(rig.ppu.framebuffer()[8] == 1);
+}
+
+TEST_CASE("x_flip_and_y_flip") {
+    Rig rig;
+    rig.sprite_setup();
+    // row 0: left nibble solid; row 7: color 2 row
+    rig.set_tile_row(0x0010, 0, 0xF0, 0x00);
+    rig.set_tile_row(0x0010, 7, 0x00, 0xFF);
+    rig.set_oam(0, 16, 8, 1, 0x20);
+    rig.render_line0();
+    // x-flip moves the solid nibble right
+    REQUIRE(rig.ppu.framebuffer()[0] == 0);
+    REQUIRE(rig.ppu.framebuffer()[4] == 1);
+
+    Rig rig2;
+    rig2.sprite_setup();
+    rig2.set_tile_row(0x0010, 0, 0xF0, 0x00);
+    rig2.set_tile_row(0x0010, 7, 0x00, 0xFF);
+    rig2.set_oam(0, 16, 8, 1, 0x40);
+    rig2.render_line0();
+    // y-flip shows tile row 7 on the sprite's first line
+    REQUIRE(rig2.ppu.framebuffer()[0] == 2);
+}
+
+TEST_CASE("tile_index_low_bit_ignored_in_8x16") {
+    Rig rig;
+    // 8x16 sprites via lcdc bit 2
+    rig.ppu.write_register(gb::kRegLcdc, 0x97);
+    rig.ppu.write_register(gb::kRegObp0, 0xE4);
+    rig.set_tile_row(0x0020, 0, 0xFF, 0x00);
+    rig.set_tile_row(0x0030, 0, 0x00, 0xFF);
+    // odd index 3 resolves to tile 2 for the top half
+    rig.set_oam(0, 16, 8, 3, 0x00);
+    rig.render_line0();
+    REQUIRE(rig.ppu.framebuffer()[0] == 1);
+}
+
+TEST_CASE("obp0_obp1_palettes_apply") {
+    Rig rig;
+    rig.sprite_setup();
+    // obp1 remaps color 1 to shade 3
+    rig.ppu.write_register(gb::kRegObp1, 0x0C);
+    rig.set_tile_row(0x0010, 0, 0xFF, 0x00);
+    rig.set_oam(0, 16, 8, 1, 0x00);
+    rig.set_oam(1, 16, 24, 1, 0x10);
+    rig.render_line0();
+    REQUIRE(rig.ppu.framebuffer()[0] == 1);
+    REQUIRE(rig.ppu.framebuffer()[16] == 3);
+}
+
+TEST_CASE("window_wx_minus_7_offset") {
+    Rig rig;
+    // window on, window map 0x9c00
+    rig.ppu.write_register(gb::kRegLcdc, 0xF1);
+    rig.ppu.write_register(gb::kRegBgp, 0xE4);
+    rig.ppu.write_register(gb::kRegWy, 0);
+    rig.ppu.write_register(gb::kRegWx, 14);
+    rig.ppu.write_vram(0x1C00, 1);
+    rig.set_tile_row(0x0010, 0, 0xFF, 0x00);
+    rig.render_line0();
+    // wx 14 puts the window's first pixel at screen x 7
+    REQUIRE(rig.ppu.framebuffer()[6] == 0);
+    REQUIRE(rig.ppu.framebuffer()[7] == 1);
+}
+
+TEST_CASE("window_internal_line_counter_pauses") {
+    Rig rig;
+    rig.ppu.write_register(gb::kRegBgp, 0xE4);
+    rig.ppu.write_register(gb::kRegWy, 0);
+    rig.ppu.write_register(gb::kRegWx, 7);
+    // window map row 0 solid, row 1 empty
+    for (uint16_t i = 0; i < 32; ++i) {
+        rig.ppu.write_vram(static_cast<uint16_t>(0x1C00 + i), 1);
+    }
+    for (uint8_t row = 0; row < 8; ++row) {
+        rig.set_tile_row(0x0010, row, 0xFF, 0x00);
+    }
+    // window on for lines 0-3
+    rig.ppu.write_register(gb::kRegLcdc, 0xF1);
+    rig.tick_lines(4);
+    // window off for lines 4-7
+    rig.ppu.write_register(gb::kRegLcdc, 0xD1);
+    rig.tick_lines(4);
+    // window back on for line 8: internal counter resumed at 4, still tile row 0
+    rig.ppu.write_register(gb::kRegLcdc, 0xF1);
+    rig.tick_lines(1);
+    REQUIRE(rig.ppu.framebuffer()[8 * 160 + 0] == 1);
+    // a non-pausing counter would already be in the empty map row
+    REQUIRE(rig.ppu.framebuffer()[3 * 160 + 0] == 1);
+    REQUIRE(rig.ppu.framebuffer()[5 * 160 + 0] == 0);
 }
 
 TEST_CASE("lcd_off_resets_ly_and_mode") {
