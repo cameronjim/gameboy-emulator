@@ -4,6 +4,7 @@
 #include "cartridge.hpp"
 #include "cpu.hpp"
 #include "interrupts.hpp"
+#include "joypad.hpp"
 #include "ppu.hpp"
 #include "serial.hpp"
 #include "timer.hpp"
@@ -14,8 +15,6 @@
 #include <span>
 
 namespace gb {
-
-enum class Button : uint8_t { Right, Left, Up, Down, A, B, Select, Start };
 
 class Gameboy {
 public:
@@ -39,7 +38,8 @@ private:
     InterruptLine irq_;
     Timer timer_{irq_};
     Ppu ppu_{irq_};
-    Bus bus_{serial_, timer_, ppu_, irq_};
+    Joypad joypad_;
+    Bus bus_{serial_, timer_, ppu_, joypad_, irq_};
     Cpu cpu_{bus_};
     std::optional<Cartridge> cart_;
     uint64_t cycles_ = 0;

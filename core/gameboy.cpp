@@ -43,7 +43,9 @@ std::span<const uint8_t> Gameboy::framebuffer() const {
     return cart_.has_value() ? ppu_.framebuffer() : std::span<const uint8_t>(pattern_);
 }
 
-void Gameboy::set_button(Button, bool) {}
+void Gameboy::set_button(Button b, bool pressed) {
+    joypad_.set_button(b, pressed);
+}
 
 void Gameboy::set_serial_sink(Serial::Sink sink) {
     serial_.set_sink(std::move(sink));

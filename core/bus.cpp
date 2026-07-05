@@ -95,6 +95,8 @@ void Bus::write16(uint16_t addr, uint16_t value) {
 
 uint8_t Bus::read_io(uint16_t addr) {
     switch (addr) {
+    case kRegJoyp:
+        return joypad_.read();
     case kRegSb:
         return serial_.read_sb();
     case kRegSc:
@@ -114,6 +116,10 @@ uint8_t Bus::read_io(uint16_t addr) {
     case kRegLy:
     case kRegLyc:
     case kRegBgp:
+    case kRegObp0:
+    case kRegObp1:
+    case kRegWy:
+    case kRegWx:
         return ppu_.read_register(addr);
     case kRegIf:
         // upper 3 bits read as 1
@@ -128,6 +134,9 @@ uint8_t Bus::read_io(uint16_t addr) {
 
 void Bus::write_io(uint16_t addr, uint8_t value) {
     switch (addr) {
+    case kRegJoyp:
+        joypad_.write(value);
+        break;
     case kRegSb:
         serial_.write_sb(value);
         break;
@@ -153,6 +162,10 @@ void Bus::write_io(uint16_t addr, uint8_t value) {
     case kRegLy:
     case kRegLyc:
     case kRegBgp:
+    case kRegObp0:
+    case kRegObp1:
+    case kRegWy:
+    case kRegWx:
         ppu_.write_register(addr, value);
         break;
     case kRegIf:
