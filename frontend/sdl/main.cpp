@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <fstream>
 #include <optional>
 #include <span>
@@ -49,8 +50,41 @@ const char* cart_type_name(gb::CartType type) {
     switch (type) {
     case gb::CartType::RomOnly:
         return "rom_only";
+    case gb::CartType::Mbc1:
+        return "mbc1";
+    case gb::CartType::Mbc3:
+        return "mbc3";
     }
     return "unknown";
+}
+
+std::string save_path(const char* rom_path) {
+    return std::string(rom_path) + ".sav";
+}
+
+void load_battery_ram(gb::Gameboy& gameboy, const char* rom_path) {
+    const std::span<uint8_t> ram = gameboy.external_ram();
+    if (!gameboy.has_battery() || ram.empty()) {
+        return;
+    }
+    std::ifstream in(save_path(rom_path), std::ios::binary);
+    if (!in) {
+        return;
+    }
+    in.read(reinterpret_cast<char*>(ram.data()), static_cast<std::streamsize>(ram.size()));
+    std::printf("loaded %s\n", save_path(rom_path).c_str());
+}
+
+void save_battery_ram(gb::Gameboy& gameboy, const char* rom_path) {
+    const std::span<const uint8_t> ram = gameboy.external_ram();
+    if (!gameboy.has_battery() || ram.empty()) {
+        return;
+    }
+    std::ofstream out(save_path(rom_path), std::ios::binary);
+    if (!out) {
+        return;
+    }
+    out.write(reinterpret_cast<const char*>(ram.data()), static_cast<std::streamsize>(ram.size()));
 }
 
 bool print_cartridge(std::span<const uint8_t> bytes) {
@@ -274,6 +308,9 @@ int main(int argc, char* argv[]) {
         }
         // test rom output channel
         gameboy.set_serial_sink([](uint8_t b) { std::fputc(b, stdout); });
+        // host time injected once; the core stays clock-free
+        gameboy.set_rtc_seconds(static_cast<uint64_t>(std::time(nullptr)));
+        load_battery_ram(gameboy, opt.rom_path);
         if (opt.dump_ppm_path != nullptr) {
             return dump_framebuffer_ppm(gameboy, opt.frames, palette_by_name(opt.palette_name),
                                         opt.dump_ppm_path);
@@ -317,6 +354,7 @@ int main(int argc, char* argv[]) {
 
     const Palette& palette = palette_by_name(opt.palette_name);
     TileViewer tile_viewer;
+    uint64_t frame_count = 0;
     bool running = true;
     while (running) {
         SDL_Event event;
@@ -386,8 +424,17 @@ int main(int argc, char* argv[]) {
         SDL_RenderCopy(renderer, texture, nullptr, nullptr);
         SDL_RenderPresent(renderer);
         tile_viewer.render(gameboy.debug_vram(), palette);
+
+        // battery save every ~30s of frames
+        ++frame_count;
+        if (opt.rom_path != nullptr && frame_count % 1800 == 0) {
+            save_battery_ram(gameboy, opt.rom_path);
+        }
     }
 
+    if (opt.rom_path != nullptr) {
+        save_battery_ram(gameboy, opt.rom_path);
+    }
     tile_viewer.close();
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);

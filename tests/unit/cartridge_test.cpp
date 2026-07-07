@@ -51,26 +51,27 @@ TEST_CASE("bad_checksum_rejects") {
     REQUIRE(reason == "header checksum mismatch");
 }
 
-TEST_CASE("mbc_types_rejected_as_unsupported") {
-    // banked mbc roms stay rejected until milestone 11
-    const std::vector<uint8_t> types = {0x01, 0x02, 0x03, 0x0F, 0x10, 0x11, 0x12, 0x13};
-    for (uint8_t type : types) {
-        const std::vector<uint8_t> rom = make_rom(type, 0x01, 0x10000);
-        std::string reason;
-        REQUIRE(!gb::Cartridge::parse(rom, &reason).has_value());
-        REQUIRE(reason == "unsupported mapper");
-    }
+TEST_CASE("unknown_cartridge_type_rejected") {
     std::string reason;
     REQUIRE(!gb::Cartridge::parse(make_rom(0x2A), &reason).has_value());
     REQUIRE(reason == "unknown cartridge type");
 }
 
-TEST_CASE("mbc_typed_32kb_rom_accepted_as_rom_only") {
-    // blargg singles declare mbc1 on 32kb images that never bank switch
-    const std::optional<gb::Cartridge> cart = gb::Cartridge::parse(make_rom(0x01));
-    REQUIRE(cart.has_value());
-    REQUIRE(cart->type() == gb::CartType::RomOnly);
-    REQUIRE(cart->rom_size() == 0x8000u);
+TEST_CASE("mbc_types_accepted_with_battery_flag") {
+    const std::optional<gb::Cartridge> mbc1 = gb::Cartridge::parse(make_rom(0x01, 0x01, 0x10000));
+    REQUIRE(mbc1.has_value());
+    REQUIRE(mbc1->type() == gb::CartType::Mbc1);
+    REQUIRE(!mbc1->has_battery());
+
+    const std::optional<gb::Cartridge> mbc1b = gb::Cartridge::parse(make_rom(0x03, 0x01, 0x10000));
+    REQUIRE(mbc1b.has_value());
+    REQUIRE(mbc1b->type() == gb::CartType::Mbc1);
+    REQUIRE(mbc1b->has_battery());
+
+    const std::optional<gb::Cartridge> mbc3 = gb::Cartridge::parse(make_rom(0x13, 0x01, 0x10000));
+    REQUIRE(mbc3.has_value());
+    REQUIRE(mbc3->type() == gb::CartType::Mbc3);
+    REQUIRE(mbc3->has_battery());
 }
 
 TEST_CASE("truncated_file_rejects") {

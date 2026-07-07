@@ -77,6 +77,34 @@ TEST_CASE("timer_interrupt_serviced_after_ime_set") {
     REQUIRE(got == "I");
 }
 
+TEST_CASE("battery_ram_visible_through_facade") {
+    // mbc1+ram+battery cart with 8kb ram
+    std::vector<uint8_t> rom = make_test_rom(0x03);
+    rom[0x0149] = 0x02;
+    // entry: enable ram, write 0x5a to 0xa000, halt
+    const uint8_t code[] = {
+        0x3E, 0x0A,       // ld a, 0x0a
+        0xEA, 0x00, 0x00, // ld (0x0000), a
+        0x3E, 0x5A,       // ld a, 0x5a
+        0xEA, 0x00, 0xA0, // ld (0xa000), a
+        0x76,             // halt
+    };
+    for (size_t i = 0; i < sizeof(code); ++i) {
+        rom[0x0100 + i] = code[i];
+    }
+    rom[0x014D] = test_rom_checksum(rom);
+
+    gb::Gameboy gameboy;
+    REQUIRE(gameboy.load_rom(rom));
+    REQUIRE(gameboy.has_battery());
+    gameboy.run_frame();
+    REQUIRE(gameboy.external_ram().size() == 0x2000);
+    REQUIRE(gameboy.external_ram()[0] == 0x5A);
+    // frontend restores a save by writing into the same span
+    gameboy.external_ram()[1] = 0x77;
+    REQUIRE(gameboy.external_ram()[1] == 0x77);
+}
+
 TEST_CASE("load_rom_rejects_invalid_bytes") {
     gb::Gameboy gameboy;
     const std::vector<uint8_t> junk = {0x01, 0x02, 0x03};
