@@ -14,3 +14,18 @@ gb-test-roms/instr_timing/instr_timing.gb | serial | Passed | 2000000000 | -
 # framebuffer channel: expect is the fnv1a hash of the index buffer, budget is the frame count
 # hash verified pixel-identical to mattcurrie's reference-dmg.png
 dmg-acid2.gb | framebuffer | 6124ed564f3b3ad8 | 300 | -
+# combined blargg rom needs mbc1
+gb-test-roms/cpu_instrs/cpu_instrs.gb | serial | Passed | 8000000000 | -
+# mooneye mbc gates via the fibonacci channel; mbc1m multicart is out of scope
+mooneye/emulator-only/mbc1/bits_bank1.gb | fibonacci | - | 2000000000 | -
+mooneye/emulator-only/mbc1/bits_bank2.gb | fibonacci | - | 2000000000 | -
+mooneye/emulator-only/mbc1/bits_mode.gb | fibonacci | - | 2000000000 | -
+mooneye/emulator-only/mbc1/bits_ramg.gb | fibonacci | - | 2000000000 | -
+mooneye/emulator-only/mbc1/ram_64kb.gb | fibonacci | - | 2000000000 | -
+mooneye/emulator-only/mbc1/ram_256kb.gb | fibonacci | - | 2000000000 | -
+mooneye/emulator-only/mbc1/rom_512kb.gb | fibonacci | - | 2000000000 | -
+mooneye/emulator-only/mbc1/rom_1Mb.gb | fibonacci | - | 2000000000 | -
+mooneye/emulator-only/mbc1/rom_2Mb.gb | fibonacci | - | 2000000000 | -
+mooneye/emulator-only/mbc1/rom_4Mb.gb | fibonacci | - | 2000000000 | -
+mooneye/emulator-only/mbc1/rom_8Mb.gb | fibonacci | - | 2000000000 | -
+mooneye/emulator-only/mbc1/rom_16Mb.gb | fibonacci | - | 2000000000 | -

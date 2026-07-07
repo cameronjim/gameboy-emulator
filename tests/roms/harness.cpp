@@ -61,6 +61,25 @@ int run_framebuffer(gb::Gameboy& gameboy, const std::string& expect, uint64_t fr
     return 1;
 }
 
+// mooneye protocol: on pass registers hold the fibonacci sequence, on fail 0x42 everywhere
+int run_fibonacci(gb::Gameboy& gameboy, uint64_t budget, const char* rom_path) {
+    uint64_t last_cycles = ~0ull;
+    while (gameboy.cycles() < budget && gameboy.cycles() != last_cycles) {
+        last_cycles = gameboy.cycles();
+        gameboy.run_frame();
+        const gb::CpuRegs& r = gameboy.debug_regs();
+        if (r.b == 3 && r.c == 5 && r.d == 8 && r.e == 13 && r.h == 21 && r.l == 34) {
+            std::printf("PASS %s\n", rom_path);
+            return 0;
+        }
+        if (r.b == 0x42 && r.c == 0x42 && r.d == 0x42 && r.e == 0x42) {
+            break;
+        }
+    }
+    std::fprintf(stderr, "FAIL %s\n", rom_path);
+    return 1;
+}
+
 int run_serial(gb::Gameboy& gameboy, const std::string& expect, uint64_t budget, const char* rom_path) {
     std::string output;
     gameboy.set_serial_sink([&output](uint8_t b) { output.push_back(static_cast<char>(b)); });
@@ -109,7 +128,9 @@ int main(int argc, char* argv[]) {
         // the budget column carries the frame count for this channel
         return run_framebuffer(gameboy, expect, budget, rom_path);
     }
-    // fibonacci channel arrives when a mooneye rom needs it
+    if (channel == "fibonacci") {
+        return run_fibonacci(gameboy, budget, rom_path);
+    }
     std::fprintf(stderr, "channel %s not implemented\n", channel.c_str());
     return 2;
 }
