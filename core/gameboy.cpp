@@ -31,6 +31,7 @@ void Gameboy::run_frame() {
             }
             timer_.tick(t);
             ppu_.tick(t);
+            apu_.tick(t);
             elapsed += t;
         }
         cycles_ += elapsed;

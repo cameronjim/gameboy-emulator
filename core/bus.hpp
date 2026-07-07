@@ -1,5 +1,6 @@
 #pragma once
 
+#include "apu.hpp"
 #include "interrupts.hpp"
 #include "joypad.hpp"
 #include "mapper.hpp"
@@ -15,8 +16,8 @@ namespace gb {
 
 class Bus final : public Memory {
 public:
-    Bus(Serial& serial, Timer& timer, Ppu& ppu, Joypad& joypad, InterruptLine& irq)
-        : serial_(serial), timer_(timer), ppu_(ppu), joypad_(joypad), irq_(irq) {}
+    Bus(Serial& serial, Timer& timer, Ppu& ppu, Apu& apu, Joypad& joypad, InterruptLine& irq)
+        : serial_(serial), timer_(timer), ppu_(ppu), apu_(apu), joypad_(joypad), irq_(irq) {}
 
     void attach_mapper(Mapper& mapper) {
         mapper_ = &mapper;
@@ -34,6 +35,7 @@ private:
     Serial& serial_;
     Timer& timer_;
     Ppu& ppu_;
+    Apu& apu_;
     Joypad& joypad_;
     InterruptLine& irq_;
     // non-owning, attached at rom load

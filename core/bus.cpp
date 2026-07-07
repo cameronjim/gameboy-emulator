@@ -94,6 +94,9 @@ void Bus::write16(uint16_t addr, uint16_t value) {
 }
 
 uint8_t Bus::read_io(uint16_t addr) {
+    if (addr >= kRegNr10 && addr <= kWaveRamEnd) {
+        return apu_.read_register(addr);
+    }
     switch (addr) {
     case kRegJoyp:
         return joypad_.read();
@@ -133,6 +136,10 @@ uint8_t Bus::read_io(uint16_t addr) {
 }
 
 void Bus::write_io(uint16_t addr, uint8_t value) {
+    if (addr >= kRegNr10 && addr <= kWaveRamEnd) {
+        apu_.write_register(addr, value);
+        return;
+    }
     switch (addr) {
     case kRegJoyp:
         joypad_.write(value);

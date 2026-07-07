@@ -1,5 +1,6 @@
 #pragma once
 
+#include "apu.hpp"
 #include "bus.hpp"
 #include "cartridge.hpp"
 #include "cpu.hpp"
@@ -10,6 +11,7 @@
 #include "timer.hpp"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -23,6 +25,10 @@ public:
     std::span<const uint8_t> framebuffer() const;
     void set_button(Button b, bool pressed);
     void set_serial_sink(Serial::Sink sink);
+    // drains stereo interleaved s16 samples at ~48khz
+    size_t read_audio(std::span<int16_t> out) {
+        return apu_.read_audio(out);
+    }
     uint64_t cycles() const {
         return cycles_;
     }
@@ -54,8 +60,9 @@ private:
     InterruptLine irq_;
     Timer timer_{irq_};
     Ppu ppu_{irq_};
+    Apu apu_;
     Joypad joypad_;
-    Bus bus_{serial_, timer_, ppu_, joypad_, irq_};
+    Bus bus_{serial_, timer_, ppu_, apu_, joypad_, irq_};
     Cpu cpu_{bus_};
     std::optional<Cartridge> cart_;
     uint64_t cycles_ = 0;
