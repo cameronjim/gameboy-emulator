@@ -10,7 +10,7 @@
 
 namespace gb {
 
-enum class CartType : uint8_t { RomOnly };
+enum class CartType : uint8_t { RomOnly, Mbc1, Mbc3 };
 
 class Cartridge {
 public:
@@ -29,6 +29,9 @@ public:
     uint32_t ram_size() const {
         return ram_size_;
     }
+    bool has_battery() const {
+        return has_battery_;
+    }
     Mapper& mapper() {
         return *mapper_;
     }
@@ -43,6 +46,7 @@ private:
     CartType type_ = CartType::RomOnly;
     uint32_t rom_size_ = 0;
     uint32_t ram_size_ = 0;
+    bool has_battery_ = false;
     std::unique_ptr<Mapper> mapper_;
 };
 

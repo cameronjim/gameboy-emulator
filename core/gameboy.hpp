@@ -30,6 +30,22 @@ public:
     std::span<const uint8_t> debug_vram() const {
         return ppu_.vram();
     }
+    // debug accessor for the mooneye fibonacci protocol
+    const CpuRegs& debug_regs() const {
+        return cpu_.regs();
+    }
+    bool has_battery() const {
+        return cart_.has_value() && cart_->has_battery();
+    }
+    // battery save path; empty without a cart or external ram
+    std::span<uint8_t> external_ram() {
+        return cart_.has_value() ? cart_->mapper().external_ram() : std::span<uint8_t>{};
+    }
+    void set_rtc_seconds(uint64_t seconds) {
+        if (cart_.has_value()) {
+            cart_->mapper().set_rtc_seconds(seconds);
+        }
+    }
 
 private:
     void render_test_pattern();

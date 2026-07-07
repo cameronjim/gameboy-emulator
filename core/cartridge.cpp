@@ -1,5 +1,7 @@
 #include "cartridge.hpp"
 
+#include "mapper_mbc1.hpp"
+#include "mapper_mbc3.hpp"
 #include "mapper_rom.hpp"
 
 #include <cstddef>
@@ -51,16 +53,10 @@ std::optional<Cartridge> Cartridge::parse(std::span<const uint8_t> bytes, std::s
     }
 
     const uint8_t type = bytes[kHeaderType];
-    if (type != 0x00) {
-        const bool mbc1 = type >= 0x01 && type <= 0x03;
-        const bool mbc3 = type >= 0x0F && type <= 0x13;
-        if (!mbc1 && !mbc3) {
-            return reject("unknown cartridge type");
-        }
-        if (rom_size_byte != 0x00) {
-            return reject("unsupported mapper");
-        }
-        // 32kb mbc-typed roms fit unbanked; real mbc support lands in milestone 11
+    const bool mbc1 = type >= 0x01 && type <= 0x03;
+    const bool mbc3 = type >= 0x0F && type <= 0x13;
+    if (type != 0x00 && !mbc1 && !mbc3) {
+        return reject("unknown cartridge type");
     }
 
     uint32_t ram_size = 0;
@@ -94,10 +90,20 @@ std::optional<Cartridge> Cartridge::parse(std::span<const uint8_t> bytes, std::s
 
     Cartridge cart;
     cart.title_ = std::move(title);
-    cart.type_ = CartType::RomOnly;
     cart.rom_size_ = declared_rom;
     cart.ram_size_ = ram_size;
-    cart.mapper_ = std::make_unique<MapperRom>(std::vector<uint8_t>(bytes.begin(), bytes.end()));
+    cart.has_battery_ = type == 0x03 || type == 0x0F || type == 0x10 || type == 0x13;
+    std::vector<uint8_t> rom(bytes.begin(), bytes.end());
+    if (mbc1) {
+        cart.type_ = CartType::Mbc1;
+        cart.mapper_ = std::make_unique<MapperMbc1>(std::move(rom), ram_size);
+    } else if (mbc3) {
+        cart.type_ = CartType::Mbc3;
+        cart.mapper_ = std::make_unique<MapperMbc3>(std::move(rom), ram_size);
+    } else {
+        cart.type_ = CartType::RomOnly;
+        cart.mapper_ = std::make_unique<MapperRom>(std::move(rom));
+    }
     return cart;
 }
 
