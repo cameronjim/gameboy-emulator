@@ -13,7 +13,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
-add_library(gbcore STATIC core/bus.cpp core/cartridge.cpp core/cpu.cpp core/gameboy.cpp
+add_library(gbcore STATIC core/apu.cpp core/bus.cpp core/cartridge.cpp core/cpu.cpp core/gameboy.cpp
                           core/joypad.cpp core/mapper_mbc1.cpp core/mapper_mbc3.cpp
                           core/mapper_rom.cpp core/ppu.cpp core/serial.cpp core/timer.cpp
                           core/trace.cpp)
@@ -42,7 +42,7 @@ FetchContent_MakeAvailable(catch2)
 
 enable_testing()
 # palette helper is header-only frontend code, unit-tested per milestone 08
-add_executable(gbcore_tests tests/unit/bus_test.cpp tests/unit/cartridge_test.cpp
+add_executable(gbcore_tests tests/unit/apu_test.cpp tests/unit/bus_test.cpp tests/unit/cartridge_test.cpp
                             tests/unit/cpu_alu_test.cpp tests/unit/cpu_blargg_smoke_test.cpp
                             tests/unit/cpu_decode_test.cpp tests/unit/cpu_test.cpp
                             tests/unit/gameboy_test.cpp tests/unit/joypad_test.cpp
