@@ -65,7 +65,8 @@ target_link_libraries(gbrom_harness PRIVATE gbcore)
 
 option(GB_BUILD_FUZZERS "build libfuzzer targets (clang only)" OFF)
 if(GB_BUILD_FUZZERS)
-    add_executable(fuzz_header tests/fuzz/fuzz_header.cpp core/cartridge.cpp core/mapper_rom.cpp)
+    add_executable(fuzz_header tests/fuzz/fuzz_header.cpp core/cartridge.cpp core/mapper_mbc1.cpp
+                               core/mapper_mbc3.cpp core/mapper_rom.cpp)
     target_include_directories(fuzz_header PRIVATE core)
     target_compile_options(fuzz_header PRIVATE -fsanitize=fuzzer,address,undefined ${GB_WARNING_FLAGS})
     target_link_options(fuzz_header PRIVATE -fsanitize=fuzzer,address,undefined)
