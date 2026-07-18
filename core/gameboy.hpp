@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <vector>
 
 namespace gb {
 
@@ -25,6 +26,9 @@ public:
     std::span<const uint8_t> framebuffer() const;
     void set_button(Button b, bool pressed);
     void set_serial_sink(Serial::Sink sink);
+    void save_state(std::vector<uint8_t>& out) const;
+    // hostile input: validated structurally before anything is applied
+    bool load_state(std::span<const uint8_t> blob);
     // drains stereo interleaved s16 samples at ~48khz
     size_t read_audio(std::span<int16_t> out) {
         return apu_.read_audio(out);
