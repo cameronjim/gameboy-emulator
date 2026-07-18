@@ -317,9 +317,20 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         std::fprintf(stderr, "sdl init failed: %s\n", SDL_GetError());
         return 1;
+    }
+
+    SDL_AudioSpec want{};
+    want.freq = 48000;
+    want.format = AUDIO_S16SYS;
+    want.channels = 2;
+    want.samples = 1024;
+    SDL_AudioSpec have{};
+    const SDL_AudioDeviceID audio_dev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
+    if (audio_dev != 0) {
+        SDL_PauseAudioDevice(audio_dev, 0);
     }
 
     const int pos = SDL_WINDOWPOS_CENTERED;
@@ -354,6 +365,7 @@ int main(int argc, char* argv[]) {
 
     const Palette& palette = palette_by_name(opt.palette_name);
     TileViewer tile_viewer;
+    std::array<int16_t, 8192> audio_buf{};
     uint64_t frame_count = 0;
     bool running = true;
     while (running) {
@@ -413,7 +425,21 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        gameboy.run_frame();
+        // audio drives pacing: keep the queue in a 50-100ms band; vsync is presentation only
+        const bool audio_paced = audio_dev != 0 && opt.rom_path != nullptr;
+        if (audio_paced) {
+            constexpr uint32_t kTargetBytes = 48000 * 2 * sizeof(int16_t) / 10;
+            uint32_t frames_this_pass = 0;
+            while (SDL_GetQueuedAudioSize(audio_dev) < kTargetBytes && frames_this_pass++ < 8) {
+                gameboy.run_frame();
+                size_t n;
+                while ((n = gameboy.read_audio(audio_buf)) > 0) {
+                    SDL_QueueAudio(audio_dev, audio_buf.data(), static_cast<uint32_t>(n * sizeof(int16_t)));
+                }
+            }
+        } else {
+            gameboy.run_frame();
+        }
         const std::span<const uint8_t> fb = gameboy.framebuffer();
         for (size_t i = 0; i < pixels.size(); ++i) {
             pixels[i] = map_shade(palette, fb[i]);
@@ -434,6 +460,9 @@ int main(int argc, char* argv[]) {
 
     if (opt.rom_path != nullptr) {
         save_battery_ram(gameboy, opt.rom_path);
+    }
+    if (audio_dev != 0) {
+        SDL_CloseAudioDevice(audio_dev);
     }
     tile_viewer.close();
     SDL_DestroyTexture(texture);
