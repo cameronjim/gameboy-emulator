@@ -1,5 +1,7 @@
 #pragma once
 
+#include "state.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -62,6 +64,10 @@ public:
         return ch2_.volume;
     }
 
+    static constexpr size_t kStateSize = 1 + 0x17 + 0x10 + 4 + 1 + 4 + 16384 * 2 + 4 + 4 + 20 + 20 + 11 + 14;
+    void save_state(StateWriter& w) const;
+    void load_state(StateReader& r);
+
 private:
     struct Square {
         bool enabled = false;
@@ -100,6 +106,8 @@ private:
         uint8_t env_timer = 0;
     };
 
+    void save_square(StateWriter& w, const Square& ch) const;
+    void load_square(StateReader& r, Square& ch);
     void step_cycle();
     void sequencer_step();
     void clock_lengths();

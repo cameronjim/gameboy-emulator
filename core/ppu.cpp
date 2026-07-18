@@ -162,6 +162,44 @@ void Ppu::write_register(uint16_t addr, uint8_t value) {
     }
 }
 
+void Ppu::save_state(StateWriter& w) const {
+    w.bytes(vram_);
+    w.bytes(oam_);
+    w.u32(dot_);
+    w.u8(ly_);
+    w.u8(lyc_);
+    w.u8(lcdc_);
+    w.u8(bgp_);
+    w.u8(scy_);
+    w.u8(scx_);
+    w.u8(obp0_);
+    w.u8(obp1_);
+    w.u8(wy_);
+    w.u8(wx_);
+    w.u8(window_line_);
+    w.u8(stat_enables_);
+    w.u8(static_cast<uint8_t>(mode_));
+}
+
+void Ppu::load_state(StateReader& r) {
+    r.bytes(vram_);
+    r.bytes(oam_);
+    dot_ = r.u32() % 456;
+    ly_ = static_cast<uint8_t>(r.u8() % 154);
+    lyc_ = r.u8();
+    lcdc_ = r.u8();
+    bgp_ = r.u8();
+    scy_ = r.u8();
+    scx_ = r.u8();
+    obp0_ = r.u8();
+    obp1_ = r.u8();
+    wy_ = r.u8();
+    wx_ = r.u8();
+    window_line_ = static_cast<uint8_t>(r.u8() % 154);
+    stat_enables_ = static_cast<uint8_t>(r.u8() & 0x78);
+    mode_ = static_cast<PpuMode>(r.u8() & 0x03);
+}
+
 void Ppu::render_scanline() {
     uint8_t* row = &framebuffer_[static_cast<uint32_t>(ly_) * kLcdWidth];
     // raw 2-bit bg/window colors kept for sprite priority decisions

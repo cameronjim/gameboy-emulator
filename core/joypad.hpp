@@ -1,5 +1,8 @@
 #pragma once
 
+#include "state.hpp"
+
+#include <cstddef>
 #include <cstdint>
 
 namespace gb {
@@ -15,6 +18,16 @@ public:
     uint8_t read() const;
     void write(uint8_t value) {
         select_ = static_cast<uint8_t>(value & 0x30);
+    }
+
+    static constexpr size_t kStateSize = 2;
+    void save_state(StateWriter& w) const {
+        w.u8(select_);
+        w.u8(pressed_);
+    }
+    void load_state(StateReader& r) {
+        select_ = static_cast<uint8_t>(r.u8() & 0x30);
+        pressed_ = r.u8();
     }
 
 private:

@@ -1,7 +1,9 @@
 #pragma once
 
 #include "interrupts.hpp"
+#include "state.hpp"
 
+#include <cstddef>
 #include <cstdint>
 
 namespace gb {
@@ -39,6 +41,20 @@ public:
         return static_cast<uint8_t>(tac_ | 0xF8);
     }
     void write_tac(uint8_t value);
+
+    static constexpr size_t kStateSize = 5;
+    void save_state(StateWriter& w) const {
+        w.u16(counter_);
+        w.u8(tima_);
+        w.u8(tma_);
+        w.u8(tac_);
+    }
+    void load_state(StateReader& r) {
+        counter_ = r.u16();
+        tima_ = r.u8();
+        tma_ = r.u8();
+        tac_ = static_cast<uint8_t>(r.u8() & 0x07);
+    }
 
 private:
     bool signal() const;

@@ -1,7 +1,9 @@
 #pragma once
 
 #include "memory.hpp"
+#include "state.hpp"
 
+#include <cstddef>
 #include <cstdint>
 
 namespace gb {
@@ -66,6 +68,10 @@ public:
     uint16_t trap_pc() const {
         return trap_pc_;
     }
+
+    static constexpr size_t kStateSize = 20;
+    void save_state(StateWriter& w) const;
+    void load_state(StateReader& r);
 
     // pure alu helpers, unit-tested directly
     static AluResult alu_add(uint8_t a, uint8_t b);

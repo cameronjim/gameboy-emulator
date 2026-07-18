@@ -67,6 +67,48 @@ uint32_t Cpu::trap_unknown(uint8_t opcode) {
     return 4;
 }
 
+void Cpu::save_state(StateWriter& w) const {
+    w.u8(regs_.a);
+    w.u8(regs_.f);
+    w.u8(regs_.b);
+    w.u8(regs_.c);
+    w.u8(regs_.d);
+    w.u8(regs_.e);
+    w.u8(regs_.h);
+    w.u8(regs_.l);
+    w.u16(regs_.sp);
+    w.u16(regs_.pc);
+    w.b(ime_);
+    w.u8(ime_delay_);
+    w.b(halted_);
+    w.b(halt_bug_);
+    w.u8(static_cast<uint8_t>(status_));
+    w.u8(trap_opcode_);
+    w.u16(trap_pc_);
+}
+
+void Cpu::load_state(StateReader& r) {
+    regs_.a = r.u8();
+    // f low nibble always reads zero
+    regs_.f = static_cast<uint8_t>(r.u8() & 0xF0);
+    regs_.b = r.u8();
+    regs_.c = r.u8();
+    regs_.d = r.u8();
+    regs_.e = r.u8();
+    regs_.h = r.u8();
+    regs_.l = r.u8();
+    regs_.sp = r.u16();
+    regs_.pc = r.u16();
+    ime_ = r.b();
+    const uint8_t delay = r.u8();
+    ime_delay_ = delay <= 2 ? delay : 0;
+    halted_ = r.b();
+    halt_bug_ = r.b();
+    status_ = r.u8() == 1 ? CpuStatus::Stopped : CpuStatus::Running;
+    trap_opcode_ = r.u8();
+    trap_pc_ = r.u16();
+}
+
 uint8_t Cpu::pending_interrupts() {
     return static_cast<uint8_t>(bus_.read8(kRegIf) & bus_.read8(kRegIe) & kIntMask);
 }

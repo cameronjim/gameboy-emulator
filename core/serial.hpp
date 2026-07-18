@@ -1,5 +1,8 @@
 #pragma once
 
+#include "state.hpp"
+
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <utility>
@@ -28,6 +31,16 @@ public:
         sb_ = value;
     }
     void write_sc(uint8_t value);
+
+    static constexpr size_t kStateSize = 2;
+    void save_state(StateWriter& w) const {
+        w.u8(sb_);
+        w.u8(sc_);
+    }
+    void load_state(StateReader& r) {
+        sb_ = r.u8();
+        sc_ = r.u8();
+    }
 
 private:
     Sink sink_;

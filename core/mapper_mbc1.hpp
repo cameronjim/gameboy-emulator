@@ -17,6 +17,26 @@ public:
     std::span<uint8_t> external_ram() override {
         return ram_;
     }
+    size_t state_size() const override {
+        return 4 + ram_.size();
+    }
+    void save_state(StateWriter& w) const override {
+        w.b(ram_enable_);
+        w.u8(bank1_);
+        w.u8(bank2_);
+        w.u8(mode_);
+        w.bytes(ram_);
+    }
+    void load_state(StateReader& r) override {
+        ram_enable_ = r.b();
+        bank1_ = static_cast<uint8_t>(r.u8() & 0x1F);
+        if (bank1_ == 0) {
+            bank1_ = 1;
+        }
+        bank2_ = static_cast<uint8_t>(r.u8() & 0x03);
+        mode_ = static_cast<uint8_t>(r.u8() & 0x01);
+        r.bytes(ram_);
+    }
 
 private:
     uint32_t rom_bank_count() const {

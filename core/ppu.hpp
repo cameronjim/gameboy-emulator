@@ -1,8 +1,10 @@
 #pragma once
 
 #include "interrupts.hpp"
+#include "state.hpp"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <span>
 
@@ -58,6 +60,10 @@ public:
     PpuMode mode() const {
         return mode_;
     }
+
+    static constexpr size_t kStateSize = 0x2000 + 0xA0 + 4 + 13;
+    void save_state(StateWriter& w) const;
+    void load_state(StateReader& r);
 
 private:
     bool lcd_enabled() const {

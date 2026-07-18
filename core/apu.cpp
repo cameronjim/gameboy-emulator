@@ -369,6 +369,102 @@ void Apu::mix_sample() {
     push_sample(static_cast<int16_t>(left * left_vol * 32), static_cast<int16_t>(right * right_vol * 32));
 }
 
+void Apu::save_square(StateWriter& w, const Square& ch) const {
+    w.b(ch.enabled);
+    w.u16(ch.freq);
+    w.u32(ch.timer);
+    w.u8(ch.duty);
+    w.u8(ch.pos);
+    w.u16(ch.length);
+    w.b(ch.length_enable);
+    w.u8(ch.volume);
+    w.b(ch.env_add);
+    w.u8(ch.env_period);
+    w.u8(ch.env_timer);
+    w.u16(ch.sweep_shadow);
+    w.u8(ch.sweep_timer);
+    w.b(ch.sweep_enabled);
+}
+
+void Apu::load_square(StateReader& r, Square& ch) {
+    ch.enabled = r.b();
+    ch.freq = static_cast<uint16_t>(r.u16() & 0x7FF);
+    ch.timer = r.u32();
+    ch.duty = static_cast<uint8_t>(r.u8() & 0x03);
+    ch.pos = static_cast<uint8_t>(r.u8() & 0x07);
+    ch.length = r.u16();
+    ch.length_enable = r.b();
+    ch.volume = static_cast<uint8_t>(r.u8() & 0x0F);
+    ch.env_add = r.b();
+    ch.env_period = static_cast<uint8_t>(r.u8() & 0x07);
+    ch.env_timer = r.u8();
+    ch.sweep_shadow = static_cast<uint16_t>(r.u16() & 0x7FF);
+    ch.sweep_timer = r.u8();
+    ch.sweep_enabled = r.b();
+}
+
+void Apu::save_state(StateWriter& w) const {
+    w.b(power_);
+    w.bytes(regs_);
+    w.bytes(wave_ram_);
+    w.u32(seq_counter_);
+    w.u8(seq_step_);
+    w.u32(sample_counter_);
+    for (int16_t s : ring_) {
+        w.u16(static_cast<uint16_t>(s));
+    }
+    w.u32(static_cast<uint32_t>(ring_read_));
+    w.u32(static_cast<uint32_t>(ring_count_));
+    save_square(w, ch1_);
+    save_square(w, ch2_);
+    w.b(ch3_.enabled);
+    w.u16(ch3_.freq);
+    w.u32(ch3_.timer);
+    w.u8(ch3_.pos);
+    w.u16(ch3_.length);
+    w.b(ch3_.length_enable);
+    w.b(ch4_.enabled);
+    w.u32(ch4_.timer);
+    w.u16(ch4_.lfsr);
+    w.u16(ch4_.length);
+    w.b(ch4_.length_enable);
+    w.u8(ch4_.volume);
+    w.b(ch4_.env_add);
+    w.u8(ch4_.env_period);
+    w.u8(ch4_.env_timer);
+}
+
+void Apu::load_state(StateReader& r) {
+    power_ = r.b();
+    r.bytes(regs_);
+    r.bytes(wave_ram_);
+    seq_counter_ = r.u32() % 8192;
+    seq_step_ = static_cast<uint8_t>(r.u8() & 0x07);
+    sample_counter_ = r.u32() % 87;
+    for (int16_t& s : ring_) {
+        s = static_cast<int16_t>(r.u16());
+    }
+    ring_read_ = r.u32() % ring_.size();
+    ring_count_ = std::min<size_t>(r.u32(), ring_.size()) & ~size_t{1};
+    load_square(r, ch1_);
+    load_square(r, ch2_);
+    ch3_.enabled = r.b();
+    ch3_.freq = static_cast<uint16_t>(r.u16() & 0x7FF);
+    ch3_.timer = r.u32();
+    ch3_.pos = static_cast<uint8_t>(r.u8() & 0x1F);
+    ch3_.length = r.u16();
+    ch3_.length_enable = r.b();
+    ch4_.enabled = r.b();
+    ch4_.timer = r.u32();
+    ch4_.lfsr = static_cast<uint16_t>(r.u16() & 0x7FFF);
+    ch4_.length = r.u16();
+    ch4_.length_enable = r.b();
+    ch4_.volume = static_cast<uint8_t>(r.u8() & 0x0F);
+    ch4_.env_add = r.b();
+    ch4_.env_period = static_cast<uint8_t>(r.u8() & 0x07);
+    ch4_.env_timer = r.u8();
+}
+
 void Apu::push_sample(int16_t left, int16_t right) {
     if (ring_count_ + 2 > ring_.size()) {
         return;
