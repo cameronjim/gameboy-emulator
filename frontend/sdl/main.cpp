@@ -367,6 +367,7 @@ int main(int argc, char* argv[]) {
     TileViewer tile_viewer;
     std::array<int16_t, 8192> audio_buf{};
     uint64_t frame_count = 0;
+    bool paused = false;
     bool running = true;
     while (running) {
         SDL_Event event;
@@ -409,11 +410,27 @@ int main(int argc, char* argv[]) {
                 if (event.key.keysym.sym == SDLK_ESCAPE) {
                     running = false;
                 }
-                if (event.key.keysym.sym == SDLK_p) {
+                if (event.key.keysym.sym == SDLK_F10) {
                     write_ppm(gameboy.framebuffer(), palette, "framebuffer.ppm");
                 }
                 if (event.key.keysym.sym == SDLK_t) {
                     tile_viewer.toggle();
+                }
+                if (event.key.keysym.sym == SDLK_p) {
+                    paused = !paused;
+                }
+                if (event.key.keysym.sym == SDLK_F5 && opt.rom_path != nullptr) {
+                    std::vector<uint8_t> state;
+                    gameboy.save_state(state);
+                    std::ofstream out(std::string(opt.rom_path) + ".state", std::ios::binary);
+                    out.write(reinterpret_cast<const char*>(state.data()),
+                              static_cast<std::streamsize>(state.size()));
+                    std::printf("state saved\n");
+                }
+                if (event.key.keysym.sym == SDLK_F8 && opt.rom_path != nullptr) {
+                    const std::string path = std::string(opt.rom_path) + ".state";
+                    const std::vector<uint8_t> state = read_file(path.c_str());
+                    std::printf(gameboy.load_state(state) ? "state loaded\n" : "state load failed\n");
                 }
             }
             if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE) {
@@ -425,9 +442,19 @@ int main(int argc, char* argv[]) {
             }
         }
 
+        const bool fast_forward = SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_TAB] != 0;
         // audio drives pacing: keep the queue in a 50-100ms band; vsync is presentation only
         const bool audio_paced = audio_dev != 0 && opt.rom_path != nullptr;
-        if (audio_paced) {
+        if (paused) {
+            SDL_Delay(10);
+        } else if (fast_forward && opt.rom_path != nullptr) {
+            // fast-forward: 4 frames per present, muted
+            for (int i = 0; i < 4; ++i) {
+                gameboy.run_frame();
+            }
+            while (gameboy.read_audio(audio_buf) > 0) {
+            }
+        } else if (audio_paced) {
             constexpr uint32_t kTargetBytes = 48000 * 2 * sizeof(int16_t) / 10;
             uint32_t frames_this_pass = 0;
             while (SDL_GetQueuedAudioSize(audio_dev) < kTargetBytes && frames_this_pass++ < 8) {
