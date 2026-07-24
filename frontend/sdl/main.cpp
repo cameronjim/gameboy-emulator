@@ -6,6 +6,10 @@
 
 #include <SDL.h>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -14,6 +18,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <fstream>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -278,17 +283,77 @@ int run_doctor(std::span<const uint8_t> rom, const char* out_path, uint64_t trac
     return 0;
 }
 
+// everything the per-frame step touches; static so the emscripten loop outlives main
+struct App {
+    std::unique_ptr<gb::Gameboy> gameboy;
+    Options opt;
+    const Palette* palette = &kGreenPalette;
+    SDL_Renderer* renderer = nullptr;
+    SDL_Texture* texture = nullptr;
+    SDL_Window* window = nullptr;
+    SDL_AudioDeviceID audio_dev = 0;
+    TileViewer tile_viewer;
+    std::array<uint32_t, gb::kLcdWidth * gb::kLcdHeight> pixels{};
+    std::array<int16_t, 8192> audio_buf{};
+    uint64_t frame_count = 0;
+    bool paused = false;
+    bool running = true;
+};
+
+App g_app;
+
+void main_loop_step(void* arg);
+
+std::unique_ptr<gb::Gameboy> make_gameboy(std::span<const uint8_t> bytes) {
+    auto gameboy = std::make_unique<gb::Gameboy>();
+    if (!gameboy->load_rom(bytes)) {
+        return nullptr;
+    }
+    // test rom output channel
+    gameboy->set_serial_sink([](uint8_t b) { std::fputc(b, stdout); });
+    // host time injected once; the core stays clock-free
+    gameboy->set_rtc_seconds(static_cast<uint64_t>(std::time(nullptr)));
+    return gameboy;
+}
+
 } // namespace
 
-int main(int argc, char* argv[]) {
-    const Options opt = parse_args(argc, argv);
+#ifdef __EMSCRIPTEN__
+// browser file input lands here through the shell page
+extern "C" EMSCRIPTEN_KEEPALIVE void wasm_load_rom(const uint8_t* data, int len) {
+    if (data == nullptr || len <= 0) {
+        return;
+    }
+    const std::span<const uint8_t> bytes(data, static_cast<size_t>(len));
+    std::unique_ptr<gb::Gameboy> next = make_gameboy(bytes);
+    if (next == nullptr) {
+        std::printf("rom rejected\n");
+        return;
+    }
+    g_app.gameboy = std::move(next);
+    std::printf("rom loaded\n");
+}
+#endif
+
+namespace {
+
+int main_impl(int argc, char* argv[]) {
+    App& app = g_app;
+    app.opt = parse_args(argc, argv);
+#ifdef __EMSCRIPTEN__
+    // the embedded homebrew demo boots by default
+    if (app.opt.rom_path == nullptr) {
+        app.opt.rom_path = "demo.gb";
+    }
+#endif
+    const Options& opt = app.opt;
     if (!opt.ok || (opt.doctor_path != nullptr && opt.rom_path == nullptr)) {
         std::fprintf(stderr, "usage: gbemu-sdl [--doctor <path>] [--trace-from <n>] [--dump-ppm <path>] "
                              "[--frames <n>] [--palette green|gray] [rom]\n");
         return 1;
     }
 
-    gb::Gameboy gameboy;
+    app.gameboy = std::make_unique<gb::Gameboy>();
     if (opt.rom_path != nullptr) {
         const std::vector<uint8_t> bytes = read_file(opt.rom_path);
         if (bytes.empty()) {
@@ -302,17 +367,14 @@ int main(int argc, char* argv[]) {
         if (!print_cartridge(bytes)) {
             return 1;
         }
-        if (!gameboy.load_rom(bytes)) {
+        app.gameboy = make_gameboy(bytes);
+        if (app.gameboy == nullptr) {
             std::fprintf(stderr, "load_rom failed\n");
             return 1;
         }
-        // test rom output channel
-        gameboy.set_serial_sink([](uint8_t b) { std::fputc(b, stdout); });
-        // host time injected once; the core stays clock-free
-        gameboy.set_rtc_seconds(static_cast<uint64_t>(std::time(nullptr)));
-        load_battery_ram(gameboy, opt.rom_path);
+        load_battery_ram(*app.gameboy, opt.rom_path);
         if (opt.dump_ppm_path != nullptr) {
-            return dump_framebuffer_ppm(gameboy, opt.frames, palette_by_name(opt.palette_name),
+            return dump_framebuffer_ppm(*app.gameboy, opt.frames, palette_by_name(opt.palette_name),
                                         opt.dump_ppm_path);
         }
     }
@@ -328,49 +390,76 @@ int main(int argc, char* argv[]) {
     want.channels = 2;
     want.samples = 1024;
     SDL_AudioSpec have{};
-    const SDL_AudioDeviceID audio_dev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
-    if (audio_dev != 0) {
-        SDL_PauseAudioDevice(audio_dev, 0);
+    app.audio_dev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
+    if (app.audio_dev != 0) {
+        SDL_PauseAudioDevice(app.audio_dev, 0);
     }
 
     const int pos = SDL_WINDOWPOS_CENTERED;
-    SDL_Window* window = SDL_CreateWindow("gbemu", pos, pos, kWidth * kScale, kHeight * kScale, 0);
-    if (window == nullptr) {
+    app.window = SDL_CreateWindow("gbemu", pos, pos, kWidth * kScale, kHeight * kScale, 0);
+    if (app.window == nullptr) {
         std::fprintf(stderr, "sdl window failed: %s\n", SDL_GetError());
         SDL_Quit();
         return 1;
     }
 
     const uint32_t renderer_flags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC;
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, renderer_flags);
-    if (renderer == nullptr) {
+    app.renderer = SDL_CreateRenderer(app.window, -1, renderer_flags);
+    if (app.renderer == nullptr) {
         std::fprintf(stderr, "sdl renderer failed: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window);
+        SDL_DestroyWindow(app.window);
         SDL_Quit();
         return 1;
     }
 
     const uint32_t texture_format = SDL_PIXELFORMAT_ARGB8888;
     const int texture_access = SDL_TEXTUREACCESS_STREAMING;
-    SDL_Texture* texture = SDL_CreateTexture(renderer, texture_format, texture_access, kWidth, kHeight);
-    if (texture == nullptr) {
+    app.texture = SDL_CreateTexture(app.renderer, texture_format, texture_access, kWidth, kHeight);
+    if (app.texture == nullptr) {
         std::fprintf(stderr, "sdl texture failed: %s\n", SDL_GetError());
-        SDL_DestroyRenderer(renderer);
-        SDL_DestroyWindow(window);
+        SDL_DestroyRenderer(app.renderer);
+        SDL_DestroyWindow(app.window);
         SDL_Quit();
         return 1;
     }
+    app.palette = &palette_by_name(opt.palette_name);
 
-    std::array<uint32_t, gb::kLcdWidth * gb::kLcdHeight> pixels{};
+#ifdef __EMSCRIPTEN__
+    // browsers forbid blocking loops
+    emscripten_set_main_loop_arg(main_loop_step, &app, 0, 1);
+#else
+    while (app.running) {
+        main_loop_step(&app);
+    }
+#endif
 
-    const Palette& palette = palette_by_name(opt.palette_name);
-    TileViewer tile_viewer;
-    std::array<int16_t, 8192> audio_buf{};
-    uint64_t frame_count = 0;
-    bool paused = false;
-    bool running = true;
-    while (running) {
-        SDL_Event event;
+    if (opt.rom_path != nullptr) {
+        save_battery_ram(*app.gameboy, opt.rom_path);
+    }
+    if (app.audio_dev != 0) {
+        SDL_CloseAudioDevice(app.audio_dev);
+    }
+    app.tile_viewer.close();
+    SDL_DestroyTexture(app.texture);
+    SDL_DestroyRenderer(app.renderer);
+    SDL_DestroyWindow(app.window);
+    SDL_Quit();
+    return 0;
+}
+
+void main_loop_step(void* arg) {
+    App& app = *static_cast<App*>(arg);
+    if (!app.running) {
+        return;
+    }
+    gb::Gameboy& gameboy = *app.gameboy;
+    const Options& opt = app.opt;
+    const Palette& palette = *app.palette;
+    TileViewer& tile_viewer = app.tile_viewer;
+    bool& running = app.running;
+    bool& paused = app.paused;
+    SDL_Event event;
+    {
         while (SDL_PollEvent(&event) != 0) {
             if (event.type == SDL_QUIT) {
                 running = false;
@@ -444,7 +533,7 @@ int main(int argc, char* argv[]) {
 
         const bool fast_forward = SDL_GetKeyboardState(nullptr)[SDL_SCANCODE_TAB] != 0;
         // audio drives pacing: keep the queue in a 50-100ms band; vsync is presentation only
-        const bool audio_paced = audio_dev != 0 && opt.rom_path != nullptr;
+        const bool audio_paced = app.audio_dev != 0 && opt.rom_path != nullptr;
         if (paused) {
             SDL_Delay(10);
         } else if (fast_forward && opt.rom_path != nullptr) {
@@ -452,49 +541,43 @@ int main(int argc, char* argv[]) {
             for (int i = 0; i < 4; ++i) {
                 gameboy.run_frame();
             }
-            while (gameboy.read_audio(audio_buf) > 0) {
+            while (gameboy.read_audio(app.audio_buf) > 0) {
             }
         } else if (audio_paced) {
             constexpr uint32_t kTargetBytes = 48000 * 2 * sizeof(int16_t) / 10;
             uint32_t frames_this_pass = 0;
-            while (SDL_GetQueuedAudioSize(audio_dev) < kTargetBytes && frames_this_pass++ < 8) {
+            while (SDL_GetQueuedAudioSize(app.audio_dev) < kTargetBytes && frames_this_pass++ < 8) {
                 gameboy.run_frame();
                 size_t n;
-                while ((n = gameboy.read_audio(audio_buf)) > 0) {
-                    SDL_QueueAudio(audio_dev, audio_buf.data(), static_cast<uint32_t>(n * sizeof(int16_t)));
+                while ((n = gameboy.read_audio(app.audio_buf)) > 0) {
+                    SDL_QueueAudio(app.audio_dev, app.audio_buf.data(),
+                                   static_cast<uint32_t>(n * sizeof(int16_t)));
                 }
             }
         } else {
             gameboy.run_frame();
         }
         const std::span<const uint8_t> fb = gameboy.framebuffer();
-        for (size_t i = 0; i < pixels.size(); ++i) {
-            pixels[i] = map_shade(palette, fb[i]);
+        for (size_t i = 0; i < app.pixels.size(); ++i) {
+            app.pixels[i] = map_shade(palette, fb[i]);
         }
 
-        SDL_UpdateTexture(texture, nullptr, pixels.data(), kWidth * 4);
-        SDL_RenderClear(renderer);
-        SDL_RenderCopy(renderer, texture, nullptr, nullptr);
-        SDL_RenderPresent(renderer);
+        SDL_UpdateTexture(app.texture, nullptr, app.pixels.data(), kWidth * 4);
+        SDL_RenderClear(app.renderer);
+        SDL_RenderCopy(app.renderer, app.texture, nullptr, nullptr);
+        SDL_RenderPresent(app.renderer);
         tile_viewer.render(gameboy.debug_vram(), palette);
 
         // battery save every ~30s of frames
-        ++frame_count;
-        if (opt.rom_path != nullptr && frame_count % 1800 == 0) {
+        ++app.frame_count;
+        if (opt.rom_path != nullptr && app.frame_count % 1800 == 0) {
             save_battery_ram(gameboy, opt.rom_path);
         }
     }
+}
 
-    if (opt.rom_path != nullptr) {
-        save_battery_ram(gameboy, opt.rom_path);
-    }
-    if (audio_dev != 0) {
-        SDL_CloseAudioDevice(audio_dev);
-    }
-    tile_viewer.close();
-    SDL_DestroyTexture(texture);
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
-    return 0;
+} // namespace
+
+int main(int argc, char* argv[]) {
+    return main_impl(argc, argv);
 }
