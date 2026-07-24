@@ -13,10 +13,11 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
-add_library(gbcore STATIC core/apu.cpp core/bus.cpp core/cartridge.cpp core/cpu.cpp core/gameboy.cpp
-                          core/joypad.cpp core/mapper_mbc1.cpp core/mapper_mbc3.cpp
-                          core/mapper_rom.cpp core/ppu.cpp core/serial.cpp core/timer.cpp
-                          core/trace.cpp)
+set(GB_CORE_SOURCES core/apu.cpp core/bus.cpp core/cartridge.cpp core/cpu.cpp core/gameboy.cpp
+                    core/joypad.cpp core/mapper_mbc1.cpp core/mapper_mbc3.cpp core/mapper_rom.cpp
+                    core/ppu.cpp core/serial.cpp core/timer.cpp core/trace.cpp)
+
+add_library(gbcore STATIC ${GB_CORE_SOURCES})
 target_include_directories(gbcore PUBLIC core)
 target_compile_options(gbcore PRIVATE ${GB_WARNING_FLAGS})
 
@@ -49,7 +50,8 @@ add_executable(gbcore_tests tests/unit/apu_test.cpp tests/unit/bus_test.cpp test
                             tests/unit/mapper_mbc1_test.cpp tests/unit/mapper_mbc3_test.cpp
                             tests/unit/mapper_rom_test.cpp
                             tests/unit/palette_test.cpp tests/unit/ppu_test.cpp
-                            tests/unit/smoke_test.cpp tests/unit/timer_test.cpp
+                            tests/unit/smoke_test.cpp tests/unit/state_test.cpp
+                            tests/unit/timer_test.cpp
                             tests/unit/trace_test.cpp)
 target_compile_options(gbcore_tests PRIVATE ${GB_WARNING_FLAGS})
 target_include_directories(gbcore_tests PRIVATE frontend/sdl)
@@ -65,9 +67,10 @@ target_link_libraries(gbrom_harness PRIVATE gbcore)
 
 option(GB_BUILD_FUZZERS "build libfuzzer targets (clang only)" OFF)
 if(GB_BUILD_FUZZERS)
-    add_executable(fuzz_header tests/fuzz/fuzz_header.cpp core/cartridge.cpp core/mapper_mbc1.cpp
-                               core/mapper_mbc3.cpp core/mapper_rom.cpp)
-    target_include_directories(fuzz_header PRIVATE core)
-    target_compile_options(fuzz_header PRIVATE -fsanitize=fuzzer,address,undefined ${GB_WARNING_FLAGS})
-    target_link_options(fuzz_header PRIVATE -fsanitize=fuzzer,address,undefined)
+    foreach(fuzzer fuzz_header fuzz_savestate)
+        add_executable(${fuzzer} tests/fuzz/${fuzzer}.cpp ${GB_CORE_SOURCES})
+        target_include_directories(${fuzzer} PRIVATE core)
+        target_compile_options(${fuzzer} PRIVATE -fsanitize=fuzzer,address,undefined ${GB_WARNING_FLAGS})
+        target_link_options(${fuzzer} PRIVATE -fsanitize=fuzzer,address,undefined)
+    endforeach()
 endif()

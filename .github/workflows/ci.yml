@@ -53,7 +53,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang
       - name: configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DGB_BUILD_FUZZERS=ON -DCMAKE_CXX_COMPILER=clang++
-      - name: build fuzzer
-        run: cmake --build build --target fuzz_header -j
+      - name: build fuzzers
+        run: cmake --build build --target fuzz_header fuzz_savestate -j
       - name: fuzz header parser
-        run: ./build/fuzz_header -max_total_time=60
+        run: ./build/fuzz_header -max_total_time=45
+      - name: fuzz savestate loader
+        run: ./build/fuzz_savestate -max_total_time=45
