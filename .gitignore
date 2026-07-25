@@ -1,2 +1,4 @@
 build/
 tests/roms/vendor/
+build-win/
+dist/
