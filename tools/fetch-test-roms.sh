@@ -25,4 +25,11 @@ if [ ! -f "$vendor/dmg-acid2.gb" ]; then
     echo "fetched dmg-acid2"
 fi
 
+# open-source homebrew game embedded as the wasm demo; never a commercial rom
+if [ ! -f "$vendor/demo.gb" ]; then
+    curl -sfL "https://github.com/tbsp/Adjustris/releases/download/v1.1/adjustris.gb" \
+        -o "$vendor/demo.gb"
+    echo "fetched adjustris demo"
+fi
+
 echo "test roms ready in $vendor"

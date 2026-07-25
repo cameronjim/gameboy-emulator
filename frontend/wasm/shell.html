@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>gbemu</title>
+<style>
+  body { background: #1a1e1a; color: #cde; font-family: monospace; text-align: center; }
+  canvas { image-rendering: pixelated; width: 480px; height: 432px; border: 2px solid #465; margin-top: 12px; }
+  .bar { margin-top: 10px; }
+</style>
+</head>
+<body>
+<h3>gbemu</h3>
+<div class="bar">
+  <input type="file" id="romfile" accept=".gb">
+  <span>arrows move &middot; z = a &middot; x = b &middot; enter = start &middot; click the page once for audio</span>
+</div>
+<canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+<script>
+  var Module = { canvas: document.getElementById('canvas') };
+  document.getElementById('romfile').addEventListener('change', function (e) {
+    var file = e.target.files[0];
+    if (!file) { return; }
+    file.arrayBuffer().then(function (buf) {
+      var bytes = new Uint8Array(buf);
+      var ptr = Module._malloc(bytes.length);
+      Module.HEAPU8.set(bytes, ptr);
+      Module.ccall('wasm_load_rom', null, ['number', 'number'], [ptr, bytes.length]);
+      Module._free(ptr);
+      Module.canvas.focus();
+    });
+  });
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

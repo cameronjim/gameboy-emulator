@@ -21,16 +21,36 @@ add_library(gbcore STATIC ${GB_CORE_SOURCES})
 target_include_directories(gbcore PUBLIC core)
 target_compile_options(gbcore PRIVATE ${GB_WARNING_FLAGS})
 
-find_package(SDL2 QUIET)
-if(SDL2_FOUND)
+if(EMSCRIPTEN)
+    # milestone 14: same frontend through emscripten's sdl2 port; the core compiles unchanged
     add_executable(gbemu-sdl frontend/sdl/main.cpp)
-    target_compile_options(gbemu-sdl PRIVATE ${GB_WARNING_FLAGS})
-    target_link_libraries(gbemu-sdl PRIVATE gbcore SDL2::SDL2)
-    if(TARGET SDL2::SDL2main)
-        target_link_libraries(gbemu-sdl PRIVATE SDL2::SDL2main)
-    endif()
+    target_compile_options(gbemu-sdl PRIVATE ${GB_WARNING_FLAGS} -sUSE_SDL=2)
+    target_link_libraries(gbemu-sdl PRIVATE gbcore)
+    set_target_properties(gbemu-sdl PROPERTIES OUTPUT_NAME index SUFFIX ".html")
+    # emscripten default stack is 64kb; native code assumes megabytes
+    target_link_options(gbemu-sdl PRIVATE -sUSE_SDL=2 -sALLOW_MEMORY_GROWTH=1 -sMINIFY_HTML=0
+        -sSTACK_SIZE=1048576
+        "-sEXPORTED_FUNCTIONS=_main,_wasm_load_rom,_malloc,_free"
+        "-sEXPORTED_RUNTIME_METHODS=ccall"
+        "--shell-file=${CMAKE_SOURCE_DIR}/frontend/wasm/shell.html"
+        "--embed-file=${CMAKE_SOURCE_DIR}/tests/roms/vendor/demo.gb@demo.gb")
 else()
-    message(WARNING "sdl2 not found; skipping gbemu-sdl target")
+    find_package(SDL2 QUIET)
+    if(SDL2_FOUND)
+        add_executable(gbemu-sdl frontend/sdl/main.cpp)
+        target_compile_options(gbemu-sdl PRIVATE ${GB_WARNING_FLAGS})
+        target_link_libraries(gbemu-sdl PRIVATE gbcore SDL2::SDL2)
+        if(TARGET SDL2::SDL2main)
+            target_link_libraries(gbemu-sdl PRIVATE SDL2::SDL2main)
+        endif()
+    else()
+        message(WARNING "sdl2 not found; skipping gbemu-sdl target")
+    endif()
+endif()
+
+if(EMSCRIPTEN)
+    # tests, harness, and fuzzers are host-only
+    return()
 endif()
 
 include(FetchContent)
