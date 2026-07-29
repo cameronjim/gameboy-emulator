@@ -25,9 +25,9 @@ void Trace::log(const CpuRegs& regs, Memory& bus, std::string& out) {
                   "A:%02X F:%02X B:%02X C:%02X D:%02X E:%02X H:%02X L:%02X SP:%04X PC:%04X "
                   "PCMEM:%02X,%02X,%02X,%02X\n",
                   regs.a, regs.f, regs.b, regs.c, regs.d, regs.e, regs.h, regs.l, regs.sp, regs.pc,
-                  bus.read8(regs.pc), bus.read8(static_cast<uint16_t>(regs.pc + 1)),
-                  bus.read8(static_cast<uint16_t>(regs.pc + 2)),
-                  bus.read8(static_cast<uint16_t>(regs.pc + 3)));
+                  bus.peek8(regs.pc), bus.peek8(static_cast<uint16_t>(regs.pc + 1)),
+                  bus.peek8(static_cast<uint16_t>(regs.pc + 2)),
+                  bus.peek8(static_cast<uint16_t>(regs.pc + 3)));
     out.append(line);
 }
 

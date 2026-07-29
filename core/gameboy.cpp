@@ -36,9 +36,12 @@ void Gameboy::run_frame() {
                 // cpu trapped an unknown opcode and stopped
                 break;
             }
-            timer_.tick(t);
-            ppu_.tick(t);
-            apu_.tick(t);
+            // the bus already ticked one m-cycle per access; spend the remainder here
+            const uint32_t ticked = bus_.take_access_cycles();
+            const uint32_t remainder = t > ticked ? t - ticked : 0;
+            timer_.tick(remainder);
+            ppu_.tick(remainder);
+            apu_.tick(remainder);
             elapsed += t;
         }
         cycles_ += elapsed;

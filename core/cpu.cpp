@@ -40,7 +40,7 @@ uint32_t Cpu::dispatch_interrupt(uint8_t pending) {
     for (uint8_t bit = 0; bit < 5; ++bit) {
         const uint8_t mask = static_cast<uint8_t>(1u << bit);
         if ((pending & mask) != 0) {
-            bus_.write8(kRegIf, static_cast<uint8_t>(bus_.read8(kRegIf) & ~mask));
+            bus_.write8(kRegIf, static_cast<uint8_t>(bus_.peek8(kRegIf) & ~mask));
             push16(regs_.pc);
             regs_.pc = kInterruptVectors[bit];
             break;
@@ -110,7 +110,8 @@ void Cpu::load_state(StateReader& r) {
 }
 
 uint8_t Cpu::pending_interrupts() {
-    return static_cast<uint8_t>(bus_.read8(kRegIf) & bus_.read8(kRegIe) & kIntMask);
+    // internal polling, not a bus access: no time passes
+    return static_cast<uint8_t>(bus_.peek8(kRegIf) & bus_.peek8(kRegIe) & kIntMask);
 }
 
 uint8_t Cpu::fetch_opcode() {

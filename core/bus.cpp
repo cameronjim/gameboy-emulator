@@ -6,7 +6,20 @@ namespace {
 constexpr uint16_t kRegDma = 0xFF46;
 } // namespace
 
+void Bus::tick_access() {
+    // pandocs: every sm83 memory access occupies one m-cycle; components see mid-instruction time
+    timer_.tick(4);
+    ppu_.tick(4);
+    apu_.tick(4);
+    access_cycles_ += 4;
+}
+
 uint8_t Bus::read8(uint16_t addr) {
+    tick_access();
+    return peek8(addr);
+}
+
+uint8_t Bus::peek8(uint16_t addr) {
     if (addr <= 0x7FFF) {
         return mapper_ != nullptr ? mapper_->read_rom(addr) : 0xFF;
     }
@@ -40,6 +53,7 @@ uint8_t Bus::read8(uint16_t addr) {
 }
 
 void Bus::write8(uint16_t addr, uint8_t value) {
+    tick_access();
     if (addr <= 0x7FFF) {
         if (mapper_ != nullptr) {
             mapper_->write_rom(addr, value);
@@ -180,10 +194,10 @@ void Bus::write_io(uint16_t addr, uint8_t value) {
         break;
     case kRegDma: {
         dma_ = value;
-        // v1 decision: instant copy of 160 bytes from xx00
+        // v1 decision: instant copy of 160 bytes from xx00; no time passes
         const uint16_t src = static_cast<uint16_t>(value << 8);
         for (uint8_t i = 0; i < 0xA0; ++i) {
-            ppu_.write_oam(i, read8(static_cast<uint16_t>(src + i)));
+            ppu_.write_oam(i, peek8(static_cast<uint16_t>(src + i)));
         }
         break;
     }

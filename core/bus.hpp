@@ -27,8 +27,15 @@ public:
 
     uint8_t read8(uint16_t addr) override;
     void write8(uint16_t addr, uint8_t value) override;
+    uint8_t peek8(uint16_t addr) override;
     uint16_t read16(uint16_t addr);
     void write16(uint16_t addr, uint16_t value);
+    // cycles already ticked into components by this instruction's accesses
+    uint32_t take_access_cycles() {
+        const uint32_t cycles = access_cycles_;
+        access_cycles_ = 0;
+        return cycles;
+    }
 
     static constexpr size_t kStateSize = 0x2000 + 0x7F + 2;
     void save_state(StateWriter& w) const {
@@ -47,6 +54,7 @@ public:
 private:
     uint8_t read_io(uint16_t addr);
     void write_io(uint16_t addr, uint8_t value);
+    void tick_access();
 
     Serial& serial_;
     Timer& timer_;
@@ -61,6 +69,7 @@ private:
     uint8_t ie_ = 0x00;
     // pandocs power-up: dma reads 0xFF on dmg
     uint8_t dma_ = 0xFF;
+    uint32_t access_cycles_ = 0;
 };
 
 } // namespace gb
