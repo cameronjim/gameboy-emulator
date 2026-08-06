@@ -202,11 +202,15 @@ void Ppu::load_state(StateReader& r) {
 
 void Ppu::render_scanline() {
     uint8_t* row = &framebuffer_[static_cast<uint32_t>(ly_) * kLcdWidth];
+    std::span<uint16_t> ids(&tile_ids_[static_cast<uint32_t>(ly_) * kLcdWidth], kLcdWidth);
+    for (uint16_t& id : ids) {
+        id = 0;
+    }
     // raw 2-bit bg/window colors kept for sprite priority decisions
     std::array<uint8_t, kLcdWidth> colors{};
     if ((lcdc_ & 0x01) != 0) {
-        render_bg(colors);
-        if (render_window(colors)) {
+        render_bg(colors, ids);
+        if (render_window(colors, ids)) {
             ++window_line_;
         }
     }
@@ -214,11 +218,11 @@ void Ppu::render_scanline() {
         row[x] = static_cast<uint8_t>((bgp_ >> (colors[x] * 2)) & 0x03);
     }
     if ((lcdc_ & 0x02) != 0) {
-        render_sprites(colors, std::span<uint8_t>(row, kLcdWidth));
+        render_sprites(colors, std::span<uint8_t>(row, kLcdWidth), ids);
     }
 }
 
-void Ppu::render_bg(std::span<uint8_t> colors) const {
+void Ppu::render_bg(std::span<uint8_t> colors, std::span<uint16_t> ids) const {
     const uint16_t map_base = (lcdc_ & 0x08) != 0 ? 0x1C00 : 0x1800;
     const bool unsigned_mode = (lcdc_ & 0x10) != 0;
     const uint8_t bgy = static_cast<uint8_t>(scy_ + ly_);
@@ -238,10 +242,11 @@ void Ppu::render_bg(std::span<uint8_t> colors) const {
         // bit 7 is the leftmost pixel
         const uint8_t px = bgx & 7;
         colors[x] = static_cast<uint8_t>((((hi >> (7 - px)) & 1) << 1) | ((lo >> (7 - px)) & 1));
+        ids[x] = tile;
     }
 }
 
-bool Ppu::render_window(std::span<uint8_t> colors) const {
+bool Ppu::render_window(std::span<uint8_t> colors, std::span<uint16_t> ids) const {
     if ((lcdc_ & 0x20) == 0 || ly_ < wy_ || wx_ > 166) {
         return false;
     }
@@ -264,11 +269,13 @@ bool Ppu::render_window(std::span<uint8_t> colors) const {
         const uint8_t px = wx_pixel & 7;
         colors[static_cast<uint32_t>(x)] =
             static_cast<uint8_t>((((hi >> (7 - px)) & 1) << 1) | ((lo >> (7 - px)) & 1));
+        ids[static_cast<uint32_t>(x)] = tile;
     }
     return true;
 }
 
-void Ppu::render_sprites(std::span<const uint8_t> colors, std::span<uint8_t> row) const {
+void Ppu::render_sprites(std::span<const uint8_t> colors, std::span<uint8_t> row,
+                         std::span<uint16_t> ids) const {
     const uint8_t height = (lcdc_ & 0x04) != 0 ? 16 : 8;
     const int line = static_cast<int>(ly_) + 16;
     // mode 2 selection: first 10 by oam order whose y-range covers the line
@@ -332,6 +339,7 @@ void Ppu::render_sprites(std::span<const uint8_t> colors, std::span<uint8_t> row
                 continue;
             }
             row[static_cast<uint32_t>(x)] = static_cast<uint8_t>((obp >> (color * 2)) & 0x03);
+            ids[static_cast<uint32_t>(x)] = static_cast<uint16_t>(0x100 | tile);
         }
     }
 }

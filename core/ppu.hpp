@@ -53,6 +53,10 @@ public:
     std::span<const uint8_t> framebuffer() const {
         return framebuffer_;
     }
+    // per-pixel source: low byte tile index, bit 8 set for sprite pixels
+    std::span<const uint16_t> tile_ids() const {
+        return tile_ids_;
+    }
     // debug accessor for the tile viewer
     std::span<const uint8_t> vram() const {
         return vram_;
@@ -73,14 +77,16 @@ private:
     void enter_mode(PpuMode mode);
     void compare_lyc();
     void render_scanline();
-    void render_bg(std::span<uint8_t> colors) const;
-    bool render_window(std::span<uint8_t> colors) const;
-    void render_sprites(std::span<const uint8_t> colors, std::span<uint8_t> row) const;
+    void render_bg(std::span<uint8_t> colors, std::span<uint16_t> ids) const;
+    bool render_window(std::span<uint8_t> colors, std::span<uint16_t> ids) const;
+    void render_sprites(std::span<const uint8_t> colors, std::span<uint8_t> row,
+                        std::span<uint16_t> ids) const;
 
     InterruptLine& irq_;
     std::array<uint8_t, 0x2000> vram_{};
     std::array<uint8_t, 0xA0> oam_{};
     std::array<uint8_t, kLcdWidth * kLcdHeight> framebuffer_{};
+    std::array<uint16_t, kLcdWidth * kLcdHeight> tile_ids_{};
     uint32_t dot_ = 0;
     uint8_t ly_ = 0;
     uint8_t lyc_ = 0;

@@ -36,6 +36,10 @@ public:
     uint64_t cycles() const {
         return cycles_;
     }
+    // per-pixel tile source for frontend colorization
+    std::span<const uint16_t> framebuffer_tiles() const {
+        return ppu_.tile_ids();
+    }
     // debug accessor for the frontend tile viewer
     std::span<const uint8_t> debug_vram() const {
         return ppu_.vram();
