@@ -10,12 +10,14 @@ virtual console. This project is the console; the games come from elsewhere.
 
 ## How to play (Windows)
 
-1. Open the `dist` folder. It has two files: `gbemu-sdl.exe` and `SDL2.dll`.
-   Keep them together. You can copy this folder anywhere.
-2. **Drag a `.gb` game file onto `gbemu-sdl.exe`.** That's it — a window opens
-   and the game runs.
-3. A sample game (`tetris.gb`, a free Tetris-style game — see note below) is
-   included so you have something to play immediately.
+Three ways to start Tetris:
+
+- Type **tetris** in the Windows search bar and hit Enter (Start Menu shortcut).
+- Type **tetris** in any terminal.
+- **Drag any `.gb` game file onto `dist\gbemu-sdl.exe`** to play other games.
+
+The `dist` folder is the whole app (`gbemu-sdl.exe` + `SDL2.dll` + `tetris.gb`).
+Keep the files together; the folder can be copied anywhere.
 
 Double-clicking the exe *without* a game shows a striped test screen — that's
 normal, it just means no game is loaded.
@@ -43,6 +45,20 @@ The Game Boy had 8 buttons. They map to your keyboard like this:
   (a debugging tool — fun to peek at, safe to close).
 - `F10` — saves a screenshot as `framebuffer.ppm` next to the exe.
 - Drag the window edges to make it any size you like.
+
+## Playing the included Tetris
+
+- **Title screen:** Up/Down picks a piece set (1-4 built in, 5-8 are ones you
+  make). Enter starts the game.
+- **In game:** arrows move, `Z`/`X` rotate each way, Enter pauses,
+  Right Shift (while paused) quits to the title.
+- **Piece editor** ("Edit Sets" on the title screen):
+  - Arrows move the cursor, `Z` confirms / toggles blocks, `X` cancels.
+  - **Hold Right Shift and press Left/Right to switch between pieces** —
+    this is the "go the other way" control.
+  - Piece count is changed with the **Insert Piece** and **Delete Piece**
+    icons, not by scrolling a number.
+  - Save Set stores your creation in slots 5-8; it persists between sessions.
 
 ## Saving
 

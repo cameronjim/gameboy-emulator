@@ -27,7 +27,7 @@
 
 namespace {
 
-constexpr int kScale = 4;
+constexpr int kScale = 5;
 constexpr int kWidth = static_cast<int>(gb::kLcdWidth);
 constexpr int kHeight = static_cast<int>(gb::kLcdHeight);
 // largest licensed gb rom is 8mb
@@ -418,8 +418,9 @@ int main_impl(int argc, char* argv[]) {
         SDL_Quit();
         return 1;
     }
-    // letterboxed scaling at any window size
+    // letterboxed scaling at any window size; whole multiples only so pixels stay uniform
     SDL_RenderSetLogicalSize(app.renderer, kWidth, kHeight);
+    SDL_RenderSetIntegerScale(app.renderer, SDL_TRUE);
 
     const uint32_t texture_format = SDL_PIXELFORMAT_ARGB8888;
     const int texture_access = SDL_TEXTUREACCESS_STREAMING;
