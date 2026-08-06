@@ -50,8 +50,9 @@ The Game Boy had 8 buttons. They map to your keyboard like this:
 
 - **Title screen:** Up/Down picks a piece set (1-4 built in, 5-8 are ones you
   make). Enter starts the game.
-- **In game:** arrows move, `Z`/`X` rotate each way, Enter pauses,
-  Right Shift (while paused) quits to the title.
+- **In game:** arrows move, `Z`/`X` rotate each way.
+- **Pause menu / back button:** press `Enter` — the game shows a menu.
+  `Enter` again resumes, `Right Shift` quits back to the title screen.
 - **Piece editor** ("Edit Sets" on the title screen):
   - Arrows move the cursor, `Z` confirms / toggles blocks, `X` cancels.
   - **Hold Right Shift and press Left/Right to switch between pieces** —
@@ -68,12 +69,9 @@ The Game Boy had 8 buttons. They map to your keyboard like this:
 
 ## The look
 
-One fixed style: pure black background, thin white text, and colored blocks —
-locked blocks get a stable color per cell, the falling piece is orange.
-Other games render clean white-on-black.
-
-In the included Tetris, block style 16 in the piece editor's "Change Tile"
-list is a plain solid block, if you prefer that look for your custom sets.
+One fixed style: pure black background, thin white text, and solid colored
+blocks — locked blocks get a stable color per cell, the falling piece is
+orange. Other games render clean white-on-black.
 
 ## Options (optional, for the curious)
 

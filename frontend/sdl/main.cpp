@@ -307,12 +307,21 @@ void main_loop_step(void* arg);
 
 // fingerprint the block-style bank so only real blocks get colorized
 void harvest_styles(App& app, std::span<const uint8_t> rom) {
-    // style 0 of the included tetris; absent in other games, which then render plain
+    // the solid bank of our patched tetris, or style 0 of the stock game;
+    // absent in other games, which then render plain white-on-black
+    std::array<uint8_t, 16> solid{};
+    for (size_t i = 0; i < 16; i += 2) {
+        solid[i] = 0x00;
+        solid[i + 1] = 0xFF;
+    }
     constexpr std::array<uint8_t, 16> kStyle0 = {0xFF, 0xFF, 0xFF, 0x81, 0xFF, 0x81, 0xE7, 0x99,
                                                  0xE7, 0x99, 0xFF, 0x81, 0xFF, 0x81, 0xFF, 0xFF};
     app.have_styles = false;
     for (size_t off = 0; off + 16 * 16 <= rom.size(); ++off) {
-        if (std::equal(kStyle0.begin(), kStyle0.end(), rom.begin() + static_cast<ptrdiff_t>(off))) {
+        const auto begin = rom.begin() + static_cast<ptrdiff_t>(off);
+        const bool solid_bank =
+            std::equal(solid.begin(), solid.end(), begin) && std::equal(begin, begin + 16 * 15, begin + 16);
+        if (solid_bank || std::equal(kStyle0.begin(), kStyle0.end(), begin)) {
             for (size_t t = 0; t < 16; ++t) {
                 std::copy_n(rom.begin() + static_cast<ptrdiff_t>(off + t * 16), 16, app.styles[t].begin());
             }
