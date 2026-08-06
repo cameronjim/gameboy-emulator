@@ -68,7 +68,7 @@ the cpu is the master clock. one loop iteration = one instruction:
 2. `Gameboy` distributes that elapsed time: `timer.tick(t)`, `ppu.tick(t)`, `apu.tick(t)`, `serial.tick(t)`.
 3. components raise interrupts by setting bits in `IF` through a shared `InterruptLine` reference.
 
-instructions execute atomically (no mid-instruction memory timing) — a deliberate v1 accuracy decision, see overview non-goals. correct per-instruction totals, including branch taken/not-taken split, are still mandatory.
+instructions execute atomically, but the bus ticks components one m-cycle per memory access during the instruction (pan docs: every sm83 memory access occupies one m-cycle), with `Gameboy` spending the remainder after the instruction returns. io reads therefore observe mid-instruction time — required by games that race an exact `ly` compare against their own vblank isr (see `io_reads_observe_mid_instruction_time`). correct per-instruction totals, including branch taken/not-taken split, are still mandatory.
 
 ## patterns in use
 

@@ -105,6 +105,49 @@ TEST_CASE("battery_ram_visible_through_facade") {
     REQUIRE(gameboy.external_ram()[1] == 0x77);
 }
 
+TEST_CASE("io_reads_observe_mid_instruction_time") {
+    // adjustris regression: an exact ly==144 poll must win the race against a
+    // vblank isr longer than one scanline, because the in-flight read sees the flip
+    std::vector<uint8_t> rom = make_test_rom();
+    const uint8_t handler[] = {
+        0x06, 0x3C, // ld b, 60: waste over one scanline
+        0x05,       // dec b
+        0x20, 0xFD, // jr nz, -3
+        0xD9,       // reti
+    };
+    for (size_t i = 0; i < sizeof(handler); ++i) {
+        rom[0x0040 + i] = handler[i];
+    }
+    const uint8_t code[] = {
+        0x3E, 0x01, // ld a, 1
+        0xE0, 0xFF, // ldh (ie), a
+        0xAF,       // xor a
+        0xE0, 0x0F, // ldh (if), a
+        0xFB,       // ei
+        0xF0, 0x44, // ldh a, (ly)
+        0xFE, 0x90, // cp 0x90
+        0x20, 0xFA, // jr nz, -6
+        0x3E, 'V',  // ld a, 'v'
+        0xE0, 0x01, // ldh (sb), a
+        0x3E, 0x81, // ld a, 0x81
+        0xE0, 0x02, // ldh (sc), a
+        0x18, 0xFE, // jr -2
+    };
+    for (size_t i = 0; i < sizeof(code); ++i) {
+        rom[0x0100 + i] = code[i];
+    }
+    rom[0x014D] = test_rom_checksum(rom);
+
+    gb::Gameboy gameboy;
+    std::string got;
+    gameboy.set_serial_sink([&got](uint8_t b) { got.push_back(static_cast<char>(b)); });
+    REQUIRE(gameboy.load_rom(rom));
+    for (int i = 0; i < 5 && got.empty(); ++i) {
+        gameboy.run_frame();
+    }
+    REQUIRE(got == "V");
+}
+
 TEST_CASE("load_rom_rejects_invalid_bytes") {
     gb::Gameboy gameboy;
     const std::vector<uint8_t> junk = {0x01, 0x02, 0x03};
