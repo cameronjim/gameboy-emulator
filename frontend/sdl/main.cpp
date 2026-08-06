@@ -113,9 +113,10 @@ struct Options {
     const char* rom_path = nullptr;
     const char* doctor_path = nullptr;
     const char* dump_ppm_path = nullptr;
-    const char* palette_name = "green";
+    const char* palette_name = "blue";
     uint64_t trace_from = 0;
     uint64_t frames = 600;
+    int volume = 40;
     bool ok = true;
 };
 
@@ -133,6 +134,9 @@ Options parse_args(int argc, char* argv[]) {
             opt.frames = std::strtoull(argv[++i], nullptr, 10);
         } else if (arg == "--palette" && i + 1 < argc) {
             opt.palette_name = argv[++i];
+        } else if (arg == "--volume" && i + 1 < argc) {
+            opt.volume = std::atoi(argv[++i]);
+            opt.volume = opt.volume < 0 ? 0 : (opt.volume > 100 ? 100 : opt.volume);
         } else if (!arg.empty() && arg[0] == '-') {
             opt.ok = false;
         } else {
@@ -349,7 +353,7 @@ int main_impl(int argc, char* argv[]) {
     const Options& opt = app.opt;
     if (!opt.ok || (opt.doctor_path != nullptr && opt.rom_path == nullptr)) {
         std::fprintf(stderr, "usage: gbemu-sdl [--doctor <path>] [--trace-from <n>] [--dump-ppm <path>] "
-                             "[--frames <n>] [--palette green|gray] [rom]\n");
+                             "[--frames <n>] [--palette blue|green|gray] [--volume 0-100] [rom]\n");
         return 1;
     }
 
@@ -379,6 +383,9 @@ int main_impl(int argc, char* argv[]) {
         }
     }
 
+    // crisp pixels: no dpi stretching, nearest-neighbour scaling
+    SDL_SetHint("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2");
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         std::fprintf(stderr, "sdl init failed: %s\n", SDL_GetError());
         return 1;
@@ -396,7 +403,7 @@ int main_impl(int argc, char* argv[]) {
     }
 
     const int pos = SDL_WINDOWPOS_CENTERED;
-    app.window = SDL_CreateWindow("gbemu", pos, pos, kWidth * kScale, kHeight * kScale, 0);
+    app.window = SDL_CreateWindow("gbemu", pos, pos, kWidth * kScale, kHeight * kScale, SDL_WINDOW_RESIZABLE);
     if (app.window == nullptr) {
         std::fprintf(stderr, "sdl window failed: %s\n", SDL_GetError());
         SDL_Quit();
@@ -411,6 +418,8 @@ int main_impl(int argc, char* argv[]) {
         SDL_Quit();
         return 1;
     }
+    // letterboxed scaling at any window size
+    SDL_RenderSetLogicalSize(app.renderer, kWidth, kHeight);
 
     const uint32_t texture_format = SDL_PIXELFORMAT_ARGB8888;
     const int texture_access = SDL_TEXTUREACCESS_STREAMING;
@@ -550,6 +559,9 @@ void main_loop_step(void* arg) {
                 gameboy.run_frame();
                 size_t n;
                 while ((n = gameboy.read_audio(app.audio_buf)) > 0) {
+                    for (size_t i = 0; i < n; ++i) {
+                        app.audio_buf[i] = static_cast<int16_t>(app.audio_buf[i] * opt.volume / 100);
+                    }
                     SDL_QueueAudio(app.audio_dev, app.audio_buf.data(),
                                    static_cast<uint32_t>(n * sizeof(int16_t)));
                 }

@@ -6,6 +6,7 @@
 
 TEST_CASE("palette_mapping_covers_all_four_indices") {
     for (uint8_t i = 0; i < 4; ++i) {
+        REQUIRE(map_shade(kBluePalette, i) == kBluePalette.shades[i]);
         REQUIRE(map_shade(kGreenPalette, i) == kGreenPalette.shades[i]);
         REQUIRE(map_shade(kGrayPalette, i) == kGrayPalette.shades[i]);
     }
@@ -13,5 +14,6 @@ TEST_CASE("palette_mapping_covers_all_four_indices") {
     REQUIRE(map_shade(kGreenPalette, 0xFF) == kGreenPalette.shades[3]);
     REQUIRE(palette_by_name("gray").shades == kGrayPalette.shades);
     REQUIRE(palette_by_name("green").shades == kGreenPalette.shades);
-    REQUIRE(palette_by_name("unknown").shades == kGreenPalette.shades);
+    REQUIRE(palette_by_name("blue").shades == kBluePalette.shades);
+    REQUIRE(palette_by_name("unknown").shades == kBluePalette.shades);
 }
