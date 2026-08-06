@@ -37,6 +37,7 @@ The Game Boy had 8 buttons. They map to your keyboard like this:
 ## Extra keys (emulator features, not Game Boy buttons)
 
 - `Esc` — quit.
+- `C` — cycle the color theme (see Themes below).
 - `P` — pause the emulator. Press again to resume.
 - Hold `Tab` — fast-forward (runs the game at 4x speed, sound muted while held).
 - `F5` — save state: snapshots the *entire* game exactly as it is right now.
@@ -66,12 +67,25 @@ The Game Boy had 8 buttons. They map to your keyboard like this:
   automatically to a `.sav` file next to the game file. It reloads next launch.
 - Save states (`F5`/`F8`) are separate and go to a `.state` file.
 
+## Themes
+
+Press `C` in-game to cycle, or start with `--palette <name>`:
+
+- `dark-multi` (default) — dark background, colored blocks. Looks like Tetris.
+- `light-multi` — cream background, colored blocks.
+- `dark-mono` — dark background, blue-on-navy.
+- `light-mono` — cream and blue.
+- `green` — the classic 1989 Game Boy green.
+- `gray` — plain grayscale.
+
+In the included Tetris, block style 16 in the piece editor's "Change Tile"
+list is a plain solid block, if you prefer that look for your custom sets.
+
 ## Options (optional, for the curious)
 
 Run from a terminal to use these:
 
-- `--palette blue|green|gray` — color scheme. `blue` (cream & navy) is the
-  default; `green` is the classic Game Boy look.
+- `--palette <name>` — starting theme (see Themes).
 - `--volume 0-100` — sound volume (default 40).
 
 ## About the included game

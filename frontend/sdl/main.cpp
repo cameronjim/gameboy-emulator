@@ -113,7 +113,7 @@ struct Options {
     const char* rom_path = nullptr;
     const char* doctor_path = nullptr;
     const char* dump_ppm_path = nullptr;
-    const char* palette_name = "blue";
+    const char* palette_name = "dark-multi";
     uint64_t trace_from = 0;
     uint64_t frames = 600;
     int volume = 40;
@@ -291,7 +291,8 @@ int run_doctor(std::span<const uint8_t> rom, const char* out_path, uint64_t trac
 struct App {
     std::unique_ptr<gb::Gameboy> gameboy;
     Options opt;
-    const Palette* palette = &kGreenPalette;
+    size_t palette_index = 0;
+    const Palette* palette = kThemes[0].palette;
     SDL_Renderer* renderer = nullptr;
     SDL_Texture* texture = nullptr;
     SDL_Window* window = nullptr;
@@ -353,7 +354,7 @@ int main_impl(int argc, char* argv[]) {
     const Options& opt = app.opt;
     if (!opt.ok || (opt.doctor_path != nullptr && opt.rom_path == nullptr)) {
         std::fprintf(stderr, "usage: gbemu-sdl [--doctor <path>] [--trace-from <n>] [--dump-ppm <path>] "
-                             "[--frames <n>] [--palette blue|green|gray] [--volume 0-100] [rom]\n");
+                             "[--frames <n>] [--palette <theme>] [--volume 0-100] [rom]\n");
         return 1;
     }
 
@@ -432,7 +433,8 @@ int main_impl(int argc, char* argv[]) {
         SDL_Quit();
         return 1;
     }
-    app.palette = &palette_by_name(opt.palette_name);
+    app.palette_index = palette_index_by_name(opt.palette_name);
+    app.palette = kThemes[app.palette_index].palette;
 
 #ifdef __EMSCRIPTEN__
     // browsers forbid blocking loops
@@ -514,6 +516,12 @@ void main_loop_step(void* arg) {
                 }
                 if (event.key.keysym.sym == SDLK_t) {
                     tile_viewer.toggle();
+                }
+                if (event.key.keysym.sym == SDLK_c) {
+                    app.palette_index = (app.palette_index + 1) % kThemes.size();
+                    app.palette = kThemes[app.palette_index].palette;
+                    std::printf("theme: %.*s\n", static_cast<int>(kThemes[app.palette_index].name.size()),
+                                kThemes[app.palette_index].name.data());
                 }
                 if (event.key.keysym.sym == SDLK_p) {
                     paused = !paused;
