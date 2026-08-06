@@ -304,6 +304,19 @@ TEST_CASE("window_internal_line_counter_pauses") {
     REQUIRE(rig.ppu.framebuffer()[5 * 160 + 0] == 0);
 }
 
+TEST_CASE("tile_ids_record_source_tile_and_sprite_flag") {
+    Rig rig;
+    rig.sprite_setup();
+    rig.ppu.write_vram(0x1800, 2);
+    rig.set_tile_row(0x0020, 0, 0xFF, 0x00);
+    rig.set_tile_row(0x0010, 0, 0xFF, 0x00);
+    rig.set_oam(0, 16, 16, 1, 0x00);
+    rig.render_line0();
+    // bg pixel reports its map tile, sprite pixel reports tile plus the flag
+    REQUIRE(rig.ppu.tile_ids()[0] == 0x0002);
+    REQUIRE(rig.ppu.tile_ids()[8] == 0x0101);
+}
+
 TEST_CASE("lcd_off_resets_ly_and_mode") {
     Rig rig;
     rig.ppu.tick(456 * 10);

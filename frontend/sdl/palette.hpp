@@ -1,51 +1,57 @@
 #pragma once
 
 #include <array>
-#include <cstddef>
 #include <cstdint>
-#include <string_view>
 
-struct Palette {
-    std::array<uint32_t, 4> shades;
+// the one look: black background, thin white ui, tetris-colored blocks
+inline constexpr std::array<uint32_t, 7> kPieceColors = {
+    0xFF00BCD4u, 0xFFFFC107u, 0xFF9C27B0u, 0xFF4CAF50u, 0xFFF44336u, 0xFF2196F3u, 0xFFFF9800u,
 };
+inline constexpr uint32_t kFallingColor = 0xFFFF9800u;
+inline constexpr uint32_t kBlack = 0xFF000000u;
+inline constexpr uint32_t kWhite = 0xFFFFFFFFu;
 
-// shade 0 is the background, 1-2 are block fills, 3 is outlines and text
-inline constexpr Palette kDarkMulti{{0xFF16161Eu, 0xFF00B8D4u, 0xFFFFB300u, 0xFFF2F2F2u}};
-inline constexpr Palette kLightMulti{{0xFFF5EEDCu, 0xFF0288D1u, 0xFFE64A19u, 0xFF1A1A2Eu}};
-inline constexpr Palette kLightMono{{0xFFF5EEDCu, 0xFF8FB6D4u, 0xFF33608Cu, 0xFF142033u}};
-inline constexpr Palette kDarkMono{{0xFF141C2Au, 0xFF3E5C7Au, 0xFF8FB6D4u, 0xFFF5EEDCu}};
-inline constexpr Palette kGreenPalette{{0xFFE0F8D0u, 0xFF88C070u, 0xFF346856u, 0xFF081820u}};
-inline constexpr Palette kGrayPalette{{0xFFFFFFFFu, 0xFFAAAAAAu, 0xFF555555u, 0xFF000000u}};
-
-struct NamedPalette {
-    std::string_view name;
-    const Palette* palette;
-};
-
-// cycle order for the theme key; first entry is the default
-inline constexpr std::array<NamedPalette, 6> kThemes = {{
-    {"dark-multi", &kDarkMulti},
-    {"light-multi", &kLightMulti},
-    {"dark-mono", &kDarkMono},
-    {"light-mono", &kLightMono},
-    {"green", &kGreenPalette},
-    {"gray", &kGrayPalette},
-}};
-
-inline uint32_t map_shade(const Palette& palette, uint8_t index) {
-    // out-of-range indices clamp into the four shades
-    return palette.shades[index & 0x3u];
+inline uint32_t scale_rgb(uint32_t c, uint32_t num, uint32_t den) {
+    const uint32_t r = ((c >> 16) & 0xFF) * num / den;
+    const uint32_t g = ((c >> 8) & 0xFF) * num / den;
+    const uint32_t b = (c & 0xFF) * num / den;
+    return 0xFF000000u | (r << 16) | (g << 8) | b;
 }
 
-inline size_t palette_index_by_name(std::string_view name) {
-    for (size_t i = 0; i < kThemes.size(); ++i) {
-        if (kThemes[i].name == name) {
-            return i;
+inline uint32_t lighten_rgb(uint32_t c, uint32_t num, uint32_t den) {
+    const uint32_t r = ((c >> 16) & 0xFF) + (255 - ((c >> 16) & 0xFF)) * num / den;
+    const uint32_t g = ((c >> 8) & 0xFF) + (255 - ((c >> 8) & 0xFF)) * num / den;
+    const uint32_t b = (c & 0xFF) + (255 - (c & 0xFF)) * num / den;
+    return 0xFF000000u | (r << 16) | (g << 8) | b;
+}
+
+// id: low byte tile index, bit 8 sprite; block_mask marks tile slots 0x80-0x8f
+// whose live vram content is one of the game's block styles
+inline uint32_t colorize(uint16_t id, uint8_t shade, uint32_t x, uint32_t y, uint16_t block_mask) {
+    if ((shade & 0x3u) == 0) {
+        return kBlack;
+    }
+    const uint8_t tile = static_cast<uint8_t>(id & 0xFF);
+    const bool sprite = (id & 0x100) != 0;
+    if (sprite || (tile >= 0x80 && tile <= 0x8F && ((block_mask >> (tile - 0x80)) & 1u) != 0)) {
+        // sprites (the falling piece, cursors) get the accent, locked blocks a per-cell color
+        const uint32_t c =
+            sprite ? kFallingColor : kPieceColors[((x / 8) * 7 + (y / 8) * 13) % kPieceColors.size()];
+        switch (shade & 0x3u) {
+        case 1:
+            return scale_rgb(c, 5, 9);
+        case 2:
+            return c;
+        default:
+            return lighten_rgb(c, 5, 9);
         }
     }
-    return 0;
-}
-
-inline const Palette& palette_by_name(std::string_view name) {
-    return *kThemes[palette_index_by_name(name)].palette;
+    switch (shade & 0x3u) {
+    case 1:
+        return 0xFF4C4C55u;
+    case 2:
+        return 0xFF9C9CA8u;
+    default:
+        return kWhite;
+    }
 }
