@@ -6,24 +6,28 @@
 
 TEST_CASE("colorize_black_background_white_text") {
     // shade 0 is always black, ui shade 3 is always white
-    REQUIRE(colorize(0x00, 0, 5, 5, 0xFFFF) == kBlack);
-    REQUIRE(colorize(0x83, 0, 5, 5, 0xFFFF) == kBlack);
-    REQUIRE(colorize(0x41, 3, 5, 5, 0xFFFF) == kWhite);
+    REQUIRE(colorize(0x00, 0, 0xFFFF, 0xFF) == kBlack);
+    REQUIRE(colorize(0x83, 0, 0xFFFF, 0xFF) == kBlack);
+    REQUIRE(colorize(0x41, 3, 0xFFFF, 0xFF) == kWhite);
     // block-range tiles not flagged as styles render as ui, not colored blocks
-    REQUIRE(colorize(0x83, 3, 5, 5, 0x0000) == kWhite);
+    REQUIRE(colorize(0x83, 3, 0x0000, 0xFF) == kWhite);
 }
 
-TEST_CASE("colorize_blocks_by_cell_and_falling_by_accent") {
-    // same cell, same color; block tiles pick from the piece colors
-    const uint32_t a = colorize(0x83, 2, 16, 40, 0xFFFF);
-    REQUIRE(a == colorize(0x8A, 2, 17, 41, 0xFFFF));
-    bool found = false;
-    for (uint32_t c : kPieceColors) {
-        found = found || c == a;
-    }
-    REQUIRE(found);
-    // sprite-layer blocks are the falling piece accent
-    REQUIRE(colorize(0x183, 2, 16, 40, 0xFFFF) == kFallingColor);
-    // fills are darker than highlights
-    REQUIRE(colorize(0x83, 1, 16, 40, 0xFFFF) != colorize(0x83, 3, 16, 40, 0xFFFF));
+TEST_CASE("colorize_blocks_by_slot_identity") {
+    // a piece's slot decides its color, independent of position or shade
+    REQUIRE(colorize(0x80, 2, 0xFFFF, 0xFF) == kPieceColors[0]);
+    REQUIRE(colorize(0x84, 2, 0xFFFF, 0xFF) == kPieceColors[4]);
+    REQUIRE(colorize(0x86, 2, 0xFFFF, 0xFF) == kPieceColors[6]);
+    // slots beyond seven wrap
+    REQUIRE(colorize(0x87, 2, 0xFFFF, 0xFF) == kPieceColors[0]);
+    // fills darker than highlights, same hue family
+    REQUIRE(colorize(0x80, 1, 0xFFFF, 0xFF) != colorize(0x80, 3, 0xFFFF, 0xFF));
+}
+
+TEST_CASE("colorize_falling_piece_follows_tracked_slot") {
+    // sprite pixels take the tracked falling slot's color
+    REQUIRE(colorize(0x102, 2, 0xFFFF, 4) == kPieceColors[4]);
+    REQUIRE(colorize(0x102, 2, 0xFFFF, 0) == kPieceColors[0]);
+    // unknown falling slot renders neutral
+    REQUIRE(colorize(0x102, 2, 0xFFFF, 0xFF) == kUnknownPiece);
 }

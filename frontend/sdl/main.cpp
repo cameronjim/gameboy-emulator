@@ -155,7 +155,7 @@ struct FlatMemory final : gb::Memory {
     std::array<uint8_t, 0x10000> mem{};
 };
 
-bool write_ppm(const gb::Gameboy& gameboy, uint16_t block_mask, const char* path) {
+bool write_ppm(const gb::Gameboy& gameboy, uint16_t block_mask, uint8_t falling_slot, const char* path) {
     std::ofstream out(path, std::ios::binary);
     if (!out) {
         std::fprintf(stderr, "cannot open %s\n", path);
@@ -167,7 +167,7 @@ bool write_ppm(const gb::Gameboy& gameboy, uint16_t block_mask, const char* path
     for (uint32_t y = 0; y < gb::kLcdHeight; ++y) {
         for (uint32_t x = 0; x < gb::kLcdWidth; ++x) {
             const size_t i = y * gb::kLcdWidth + x;
-            const uint32_t rgb = colorize(ids[i], fb[i], x, y, block_mask);
+            const uint32_t rgb = colorize(ids[i], fb[i], block_mask, falling_slot);
             const char px[3] = {static_cast<char>(rgb >> 16), static_cast<char>(rgb >> 8),
                                 static_cast<char>(rgb)};
             out.write(px, 3);
@@ -289,6 +289,9 @@ struct App {
     // the 16 block-style tile bitmaps harvested from the loaded rom
     std::array<std::array<uint8_t, 16>, 16> styles{};
     bool have_styles = false;
+    // piece identity tracking: the next-preview slot becomes the falling slot
+    uint8_t preview_slot = 0xFF;
+    uint8_t falling_slot = 0xFF;
     SDL_Renderer* renderer = nullptr;
     SDL_Texture* texture = nullptr;
     SDL_Window* window = nullptr;
@@ -350,6 +353,33 @@ uint16_t style_mask(const App& app) {
     return mask;
 }
 
+// the falling piece is sprites, so its slot is invisible to us directly; the
+// game shows the next piece in the preview box first, and when the preview
+// changes, the old previewed slot is what just started falling
+void track_falling_piece(App& app, uint16_t block_mask) {
+    const std::span<const uint8_t> fb = app.gameboy->framebuffer();
+    const std::span<const uint16_t> ids = app.gameboy->framebuffer_tiles();
+    uint8_t seen = 0xFF;
+    for (uint32_t y = 8; y < 48 && seen == 0xFF; ++y) {
+        for (uint32_t x = 104; x < 152; ++x) {
+            const size_t i = y * gb::kLcdWidth + x;
+            const uint16_t id = ids[i];
+            const uint8_t tile = static_cast<uint8_t>(id & 0xFF);
+            if ((id & 0x100) == 0 && fb[i] != 0 && tile >= 0x80 && tile <= 0x8F &&
+                ((block_mask >> (tile - 0x80)) & 1u) != 0) {
+                seen = static_cast<uint8_t>(tile - 0x80);
+                break;
+            }
+        }
+    }
+    if (seen != 0xFF && seen != app.preview_slot) {
+        if (app.preview_slot != 0xFF) {
+            app.falling_slot = app.preview_slot;
+        }
+        app.preview_slot = seen;
+    }
+}
+
 std::unique_ptr<gb::Gameboy> make_gameboy(std::span<const uint8_t> bytes) {
     auto gameboy = std::make_unique<gb::Gameboy>();
     if (!gameboy->load_rom(bytes)) {
@@ -366,8 +396,9 @@ std::unique_ptr<gb::Gameboy> make_gameboy(std::span<const uint8_t> bytes) {
 int dump_framebuffer_ppm(App& app, uint64_t frames, const char* path) {
     for (uint64_t i = 0; i < frames; ++i) {
         app.gameboy->run_frame();
+        track_falling_piece(app, style_mask(app));
     }
-    return write_ppm(*app.gameboy, style_mask(app), path) ? 0 : 1;
+    return write_ppm(*app.gameboy, style_mask(app), app.falling_slot, path) ? 0 : 1;
 }
 
 } // namespace
@@ -558,7 +589,7 @@ void main_loop_step(void* arg) {
                     running = false;
                 }
                 if (event.key.keysym.sym == SDLK_F10) {
-                    write_ppm(gameboy, style_mask(app), "framebuffer.ppm");
+                    write_ppm(gameboy, style_mask(app), app.falling_slot, "framebuffer.ppm");
                 }
                 if (event.key.keysym.sym == SDLK_t) {
                     tile_viewer.toggle();
@@ -621,10 +652,11 @@ void main_loop_step(void* arg) {
         const std::span<const uint8_t> fb = gameboy.framebuffer();
         const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
         const uint16_t block_mask = style_mask(app);
+        track_falling_piece(app, block_mask);
         for (uint32_t y = 0; y < gb::kLcdHeight; ++y) {
             for (uint32_t x = 0; x < gb::kLcdWidth; ++x) {
                 const size_t i = y * gb::kLcdWidth + x;
-                app.pixels[i] = colorize(ids[i], fb[i], x, y, block_mask);
+                app.pixels[i] = colorize(ids[i], fb[i], block_mask, app.falling_slot);
             }
         }
 
