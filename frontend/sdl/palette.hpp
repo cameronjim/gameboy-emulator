@@ -28,7 +28,8 @@ inline uint32_t lighten_rgb(uint32_t c, uint32_t num, uint32_t den) {
 // id: low byte tile index, bit 8 sprite; block slots are tiles 0x80-0x8f and the
 // slot number is the piece's identity, so a piece keeps one color for its life.
 // falling_slot is the slot of the piece in flight, tracked from the next preview.
-inline uint32_t colorize(uint16_t id, uint8_t shade, uint16_t block_mask, uint8_t falling_slot) {
+inline uint32_t colorize(uint16_t id, uint8_t shade, uint32_t x, uint32_t y, uint16_t block_mask,
+                         uint8_t falling_slot) {
     if ((shade & 0x3u) == 0) {
         return kBlack;
     }
@@ -41,14 +42,16 @@ inline uint32_t colorize(uint16_t id, uint8_t shade, uint16_t block_mask, uint8_
         } else {
             c = kPieceColors[(tile - 0x80) % kPieceColors.size()];
         }
-        switch (shade & 0x3u) {
-        case 1:
-            return scale_rgb(c, 5, 9);
-        case 2:
-            return c;
-        default:
-            return lighten_rgb(c, 5, 9);
+        // classic block bevel inside each 8x8 cell
+        const uint32_t cx = x & 7;
+        const uint32_t cy = y & 7;
+        if (cx == 0 || cy == 0) {
+            return lighten_rgb(c, 4, 9);
         }
+        if (cx == 7 || cy == 7) {
+            return scale_rgb(c, 5, 9);
+        }
+        return c;
     }
     switch (shade & 0x3u) {
     case 1:

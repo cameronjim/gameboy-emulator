@@ -167,7 +167,7 @@ bool write_ppm(const gb::Gameboy& gameboy, uint16_t block_mask, uint8_t falling_
     for (uint32_t y = 0; y < gb::kLcdHeight; ++y) {
         for (uint32_t x = 0; x < gb::kLcdWidth; ++x) {
             const size_t i = y * gb::kLcdWidth + x;
-            const uint32_t rgb = colorize(ids[i], fb[i], block_mask, falling_slot);
+            const uint32_t rgb = colorize(ids[i], fb[i], x, y, block_mask, falling_slot);
             const char px[3] = {static_cast<char>(rgb >> 16), static_cast<char>(rgb >> 8),
                                 static_cast<char>(rgb)};
             out.write(px, 3);
@@ -656,7 +656,7 @@ void main_loop_step(void* arg) {
         for (uint32_t y = 0; y < gb::kLcdHeight; ++y) {
             for (uint32_t x = 0; x < gb::kLcdWidth; ++x) {
                 const size_t i = y * gb::kLcdWidth + x;
-                app.pixels[i] = colorize(ids[i], fb[i], block_mask, app.falling_slot);
+                app.pixels[i] = colorize(ids[i], fb[i], x, y, block_mask, app.falling_slot);
             }
         }
 
