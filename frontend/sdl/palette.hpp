@@ -10,6 +10,10 @@ inline constexpr std::array<uint32_t, 7> kPieceColors = {
 inline constexpr uint32_t kUnknownPiece = 0xFFB8B8C0u;
 inline constexpr uint32_t kBlack = 0xFF000000u;
 inline constexpr uint32_t kWhite = 0xFFFFFFFFu;
+// faint beveled grid on the empty background
+inline constexpr uint32_t kGridFace = 0xFF101014u;
+inline constexpr uint32_t kGridLight = 0xFF1E1E26u;
+inline constexpr uint32_t kGridDark = 0xFF050508u;
 
 inline uint32_t scale_rgb(uint32_t c, uint32_t num, uint32_t den) {
     const uint32_t r = ((c >> 16) & 0xFF) * num / den;
@@ -31,7 +35,16 @@ inline uint32_t lighten_rgb(uint32_t c, uint32_t num, uint32_t den) {
 inline uint32_t colorize(uint16_t id, uint8_t shade, uint32_t x, uint32_t y, uint16_t block_mask,
                          uint8_t falling_slot) {
     if ((shade & 0x3u) == 0) {
-        return kBlack;
+        // empty space shows a faint beveled grid so the play area reads clearly
+        const uint32_t cx = x & 7;
+        const uint32_t cy = y & 7;
+        if (cx == 0 || cy == 0) {
+            return kGridLight;
+        }
+        if (cx == 7 || cy == 7) {
+            return kGridDark;
+        }
+        return kGridFace;
     }
     const uint8_t tile = static_cast<uint8_t>(id & 0xFF);
     const bool sprite = (id & 0x100) != 0;
