@@ -69,9 +69,16 @@ The Game Boy had 8 buttons. They map to your keyboard like this:
 
 ## The look
 
-One fixed style: pure black background, thin white text, and solid colored
-blocks — locked blocks get a stable color per cell, the falling piece is
-orange. Other games render clean white-on-black.
+One fixed style: menus are pure black with thin white text; in game, each
+piece keeps one color for its life, blocks get a classic bevel, and the empty
+play area shows a faint beveled grid. Other games render clean white-on-black.
+
+## Window icon
+
+Put a 32x32 `gbemu.bmp` next to `gbemu-sdl.exe` to give the window and
+taskbar an icon. A game can override it with its own: name the file after the
+game plus `.icon.bmp` (for example `tetris.gb.icon.bmp` next to `tetris.gb`).
+Ready-made icons live in `assets/icons/` — copy the one you like.
 
 ## Options (optional, for the curious)
 
