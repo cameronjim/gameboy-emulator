@@ -571,6 +571,9 @@ void main_loop_step(void* arg) {
                     gameboy.set_button(gb::Button::Start, down);
                     break;
                 case SDLK_RSHIFT:
+                // windows fakes shift releases around arrow presses, so shift
+                // cannot chord with the d-pad; backspace is the reliable select
+                case SDLK_BACKSPACE:
                     gameboy.set_button(gb::Button::Select, down);
                     break;
                 default:
