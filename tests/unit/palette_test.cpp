@@ -5,7 +5,7 @@
 #include <cstdint>
 
 TEST_CASE("colorize_background_grid_and_white_text") {
-    // shade 0 renders the faint beveled grid, ui shade 3 is always white
+    // shade 0 renders the faint beveled grid in game, ui shade 3 is always white
     REQUIRE(colorize(0x00, 0, 3, 3, 0xFFFF, 0xFF) == kGridFace);
     REQUIRE(colorize(0x00, 0, 0, 3, 0xFFFF, 0xFF) == kGridLight);
     REQUIRE(colorize(0x00, 0, 3, 7, 0xFFFF, 0xFF) == kGridDark);
@@ -13,6 +13,13 @@ TEST_CASE("colorize_background_grid_and_white_text") {
     REQUIRE(colorize(0x41, 3, 5, 5, 0xFFFF, 0xFF) == kWhite);
     // block-range tiles not flagged as styles render as ui, not colored blocks
     REQUIRE(colorize(0x83, 3, 5, 5, 0x0000, 0xFF) == kWhite);
+}
+
+TEST_CASE("colorize_menu_background_is_flat") {
+    // no block bank loaded means a menu screen: no grid anywhere
+    REQUIRE(colorize(0x00, 0, 3, 3, 0x0000, 0xFF) == kBlack);
+    REQUIRE(colorize(0x00, 0, 0, 3, 0x0000, 0xFF) == kBlack);
+    REQUIRE(colorize(0x00, 0, 3, 7, 0x0000, 0xFF) == kBlack);
 }
 
 TEST_CASE("colorize_blocks_by_slot_identity") {

@@ -35,7 +35,11 @@ inline uint32_t lighten_rgb(uint32_t c, uint32_t num, uint32_t den) {
 inline uint32_t colorize(uint16_t id, uint8_t shade, uint32_t x, uint32_t y, uint16_t block_mask,
                          uint8_t falling_slot) {
     if ((shade & 0x3u) == 0) {
-        // empty space shows a faint beveled grid so the play area reads clearly
+        // menus have no block bank in vram, so they stay flat black
+        if (block_mask == 0) {
+            return kBlack;
+        }
+        // in game, empty space shows a faint beveled grid so the play area reads clearly
         const uint32_t cx = x & 7;
         const uint32_t cy = y & 7;
         if (cx == 0 || cy == 0) {
