@@ -69,9 +69,11 @@ The Game Boy had 8 buttons. They map to your keyboard like this:
 
 ## The look
 
-One fixed style: menus are pure black with thin white text; in game, each
-piece keeps one color for its life, blocks get a classic bevel, and the empty
-play area shows a faint beveled grid. Other games render clean white-on-black.
+One fixed style: menus are pure black with thin white text; in game, every
+piece wears its shape's classic color (cyan I, yellow O, purple T, green S,
+red Z, blue J, orange L) from the moment it appears and never changes, blocks
+get a classic bevel, and the empty play area shows a faint beveled grid.
+Other games render clean white-on-black.
 
 ## Window icon
 
