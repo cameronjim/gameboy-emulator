@@ -177,6 +177,29 @@ bool write_ppm(const gb::Gameboy& gameboy, uint16_t block_mask, uint8_t falling_
     return true;
 }
 
+// window icon: per-game <rom>.icon.bmp wins, else gbemu.bmp beside the executable
+void set_window_icon(SDL_Window* window, const char* rom_path) {
+    SDL_Surface* icon = nullptr;
+    if (rom_path != nullptr) {
+        icon = SDL_LoadBMP((std::string(rom_path) + ".icon.bmp").c_str());
+    }
+    if (icon == nullptr) {
+        char* base = SDL_GetBasePath();
+        if (base != nullptr) {
+            icon = SDL_LoadBMP((std::string(base) + "gbemu.bmp").c_str());
+            SDL_free(base);
+        }
+    }
+    if (icon == nullptr) {
+        icon = SDL_LoadBMP("gbemu.bmp");
+    }
+    if (icon == nullptr) {
+        return;
+    }
+    SDL_SetWindowIcon(window, icon);
+    SDL_FreeSurface(icon);
+}
+
 // second window: all 384 tiles as a 16x24 grid, decoded straight from vram
 class TileViewer {
 public:
@@ -491,6 +514,7 @@ int main_impl(int argc, char* argv[]) {
         SDL_Quit();
         return 1;
     }
+    set_window_icon(app.window, opt.rom_path);
 
     const uint32_t renderer_flags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC;
     app.renderer = SDL_CreateRenderer(app.window, -1, renderer_flags);
