@@ -550,24 +550,38 @@ void main_loop_step(void* arg) {
                 const bool down = event.type == SDL_KEYDOWN;
                 switch (event.key.keysym.sym) {
                 case SDLK_RIGHT:
+                case SDLK_d:
                     gameboy.set_button(gb::Button::Right, down);
                     break;
                 case SDLK_LEFT:
+                case SDLK_a:
                     gameboy.set_button(gb::Button::Left, down);
                     break;
                 case SDLK_UP:
+                case SDLK_w:
                     gameboy.set_button(gb::Button::Up, down);
                     break;
                 case SDLK_DOWN:
+                case SDLK_s:
                     gameboy.set_button(gb::Button::Down, down);
                     break;
+                case SDLK_f:
                 case SDLK_z:
                     gameboy.set_button(gb::Button::A, down);
                     break;
+                case SDLK_g:
                 case SDLK_x:
                     gameboy.set_button(gb::Button::B, down);
                     break;
                 case SDLK_RETURN:
+                case SDLK_e:
+                    gameboy.set_button(gb::Button::Start, down);
+                    break;
+                case SDLK_ESCAPE:
+                    // esc opens the game's own pause menu; inert on flat menus
+                    if (down && style_mask(app) == 0) {
+                        break;
+                    }
                     gameboy.set_button(gb::Button::Start, down);
                     break;
                 case SDLK_RSHIFT:
@@ -581,9 +595,6 @@ void main_loop_step(void* arg) {
                 }
             }
             if (event.type == SDL_KEYDOWN) {
-                if (event.key.keysym.sym == SDLK_ESCAPE) {
-                    running = false;
-                }
                 if (event.key.keysym.sym == SDLK_F10) {
                     write_ppm(gameboy, style_mask(app), "framebuffer.ppm");
                 }

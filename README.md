@@ -28,16 +28,17 @@ The Game Boy had 8 buttons. They map to your keyboard like this:
 
 | Your keyboard      | Game Boy button |
 | ------------------ | --------------- |
-| Arrow keys         | D-pad (up/down/left/right) |
-| `Z`                | A button (confirm / rotate) |
-| `X`                | B button (cancel) |
-| `Enter`            | Start (start game / pause menu) |
+| Arrows or `WASD`   | D-pad (up/down/left/right) |
+| `F` (or `Z`)       | A button (confirm / rotate) |
+| `G` (or `X`)       | B button (cancel) |
+| `E` or `Enter`     | Start (start game / pause menu) |
+| `Esc`              | Also opens the pause menu while a game is running |
 | `Backspace`        | Select (also `Right Shift`, but Windows drops shift while arrows are held — use Backspace for combos) |
 
 ## Extra keys (emulator features, not Game Boy buttons)
 
-- `Esc` — quit.
 - `P` — pause the emulator. Press again to resume.
+- Quitting: close the window (or `Alt+F4`). No key quits the app by accident.
 - Hold `Tab` — fast-forward (runs the game at 4x speed, sound muted while held).
 - `F5` — save state: snapshots the *entire* game exactly as it is right now.
 - `F8` — load state: jumps back to your last `F5` snapshot instantly.
@@ -50,11 +51,11 @@ The Game Boy had 8 buttons. They map to your keyboard like this:
 
 - **Title screen:** Up/Down picks a piece set (1-4 built in, 5-8 are ones you
   make). Enter starts the game.
-- **In game:** arrows move, `Z`/`X` rotate each way.
+- **In game:** arrows or `WASD` move, `F`/`G` rotate each way.
 - **Pause menu / back button:** press `Enter` — the game shows a menu.
   `Enter` again resumes, `Backspace` quits back to the title screen.
 - **Piece editor** ("Edit Sets" on the title screen):
-  - Arrows move the cursor, `Z` confirms / toggles blocks, `X` cancels.
+  - Arrows move the cursor, `F` confirms / toggles blocks, `G` cancels.
   - **Hold Backspace and press Left/Right to switch between pieces** —
     this is the "go the other way" control.
   - Piece count is changed with the **Insert Piece** and **Delete Piece**
