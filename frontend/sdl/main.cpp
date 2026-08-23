@@ -312,6 +312,8 @@ struct App {
     // the 16 block-style tile bitmaps harvested from the loaded rom
     std::array<std::array<uint8_t, 16>, 16> styles{};
     bool have_styles = false;
+    // which button the held esc key is standing in for
+    gb::Button esc_button = gb::Button::B;
     SDL_Renderer* renderer = nullptr;
     SDL_Texture* texture = nullptr;
     SDL_Window* window = nullptr;
@@ -579,11 +581,11 @@ void main_loop_step(void* arg) {
                     gameboy.set_button(gb::Button::Start, down);
                     break;
                 case SDLK_ESCAPE:
-                    // esc opens the game's own pause menu; inert on flat menus
-                    if (down && style_mask(app, 0x800) == 0) {
-                        break;
+                    // esc backs out of menus with b, opens the pause menu in game
+                    if (down) {
+                        app.esc_button = style_mask(app, 0x800) == 0 ? gb::Button::B : gb::Button::Start;
                     }
-                    gameboy.set_button(gb::Button::Start, down);
+                    gameboy.set_button(app.esc_button, down);
                     break;
                 case SDLK_RSHIFT:
                 // windows fakes shift releases around arrow presses, so shift

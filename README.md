@@ -32,7 +32,7 @@ The Game Boy had 8 buttons. They map to your keyboard like this:
 | `F` (or `Z`)       | A button (confirm / rotate) |
 | `G` (or `X`)       | B button (cancel) |
 | `E` or `Enter`     | Start (start game / pause menu) |
-| `Esc`              | Also opens the pause menu while a game is running |
+| `Esc`              | Back: leaves credits/high scores, opens the pause menu in game |
 | `Backspace`        | Select (also `Right Shift`, but Windows drops shift while arrows are held — use Backspace for combos) |
 
 ## Extra keys (emulator features, not Game Boy buttons)
