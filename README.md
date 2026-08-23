@@ -60,6 +60,8 @@ The Game Boy had 8 buttons. They map to your keyboard like this:
     this is the "go the other way" control.
   - Piece count is changed with the **Insert Piece** and **Delete Piece**
     icons, not by scrolling a number.
+  - The SPIN row shows a check mark when the piece spins all the way around,
+    or an X when it wobbles (rotates once, then back).
   - Save Set stores your creation in slots 5-8; it persists between sessions.
 
 ## Saving
