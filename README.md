@@ -33,7 +33,7 @@ The Game Boy had 8 buttons. They map to your keyboard like this:
 | `G` (or `X`)       | B button (cancel) |
 | `E` or `Enter`     | Start (start game / pause menu) |
 | `Esc`              | Back: leaves credits/high scores, opens the pause menu in game |
-| `Backspace`        | Select (also `Right Shift`, but Windows drops shift while arrows are held — use Backspace for combos) |
+| `R`                | Select (also `Backspace`; `Right Shift` works too but Windows drops shift while arrows are held) |
 
 ## Extra keys (emulator features, not Game Boy buttons)
 
@@ -53,10 +53,10 @@ The Game Boy had 8 buttons. They map to your keyboard like this:
   make). Enter starts the game.
 - **In game:** arrows or `WASD` move, `F`/`G` rotate each way.
 - **Pause menu / back button:** press `Enter` — the game shows a menu.
-  `Enter` again resumes, `Backspace` quits back to the title screen.
+  `Enter` again resumes, `R` quits back to the title screen.
 - **Piece editor** ("Edit Sets" on the title screen):
   - Arrows move the cursor, `F` confirms / toggles blocks, `G` cancels.
-  - **Hold Backspace and press Left/Right to switch between pieces** —
+  - **Hold R and press Left/Right (or A/D) to switch between pieces** —
     this is the "go the other way" control.
   - Piece count is changed with the **Insert Piece** and **Delete Piece**
     icons, not by scrolling a number.
