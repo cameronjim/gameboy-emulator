@@ -30,8 +30,11 @@ inline uint32_t lighten_rgb(uint32_t c, uint32_t num, uint32_t den) {
 
 // id: low byte tile index, bit 8 sprite; block slots are tiles 0x80-0x8f and the
 // slot number is the shape's identity, so a piece keeps one color for its life.
-// the falling piece is sprites whose tile index mirrors its slot at 0x00-0x0f.
-inline uint32_t colorize(uint16_t id, uint8_t shade, uint32_t x, uint32_t y, uint16_t block_mask) {
+// the falling piece is sprites whose tile index mirrors its slot at 0x00-0x0f;
+// sprite_mask says which mirror slots truly hold styles, so ui sprites that
+// happen to use low tiles (the piece editor icons) keep their own art.
+inline uint32_t colorize(uint16_t id, uint8_t shade, uint32_t x, uint32_t y, uint16_t block_mask,
+                         uint16_t sprite_mask) {
     if ((shade & 0x3u) == 0) {
         // menus have no block bank in vram, so they stay flat black
         if (block_mask == 0) {
@@ -50,9 +53,17 @@ inline uint32_t colorize(uint16_t id, uint8_t shade, uint32_t x, uint32_t y, uin
     }
     const uint8_t tile = static_cast<uint8_t>(id & 0xFF);
     const bool sprite = (id & 0x100) != 0;
-    const uint8_t slot = sprite ? tile : static_cast<uint8_t>(tile - 0x80);
-    const bool in_bank = sprite ? tile <= 0x0F : (tile >= 0x80 && tile <= 0x8F);
-    if (in_bank && ((block_mask >> slot) & 1u) != 0) {
+    uint8_t slot = 0;
+    bool is_block = false;
+    if (tile >= 0x80 && tile <= 0x8F) {
+        // bg blocks, and sprites reusing the bg bank (the editor's tile row)
+        slot = static_cast<uint8_t>(tile - 0x80);
+        is_block = ((block_mask >> slot) & 1u) != 0;
+    } else if (sprite && tile <= 0x0F) {
+        slot = tile;
+        is_block = ((sprite_mask >> slot) & 1u) != 0;
+    }
+    if (is_block) {
         const uint32_t c = kPieceColors[slot % kPieceColors.size()];
         // classic block bevel inside each 8x8 cell
         const uint32_t cx = x & 7;

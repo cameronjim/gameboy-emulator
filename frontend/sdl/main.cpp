@@ -155,7 +155,7 @@ struct FlatMemory final : gb::Memory {
     std::array<uint8_t, 0x10000> mem{};
 };
 
-bool write_ppm(const gb::Gameboy& gameboy, uint16_t block_mask, const char* path) {
+bool write_ppm(const gb::Gameboy& gameboy, uint16_t block_mask, uint16_t sprite_mask, const char* path) {
     std::ofstream out(path, std::ios::binary);
     if (!out) {
         std::fprintf(stderr, "cannot open %s\n", path);
@@ -167,7 +167,7 @@ bool write_ppm(const gb::Gameboy& gameboy, uint16_t block_mask, const char* path
     for (uint32_t y = 0; y < gb::kLcdHeight; ++y) {
         for (uint32_t x = 0; x < gb::kLcdWidth; ++x) {
             const size_t i = y * gb::kLcdWidth + x;
-            const uint32_t rgb = colorize(ids[i], fb[i], x, y, block_mask);
+            const uint32_t rgb = colorize(ids[i], fb[i], x, y, block_mask, sprite_mask);
             const char px[3] = {static_cast<char>(rgb >> 16), static_cast<char>(rgb >> 8),
                                 static_cast<char>(rgb)};
             out.write(px, 3);
@@ -354,17 +354,18 @@ void harvest_styles(App& app, std::span<const uint8_t> rom) {
     }
 }
 
-// which tile slots 0x80-0x8f currently hold a block style
-uint16_t style_mask(const App& app) {
+// which tile slots at the given vram base currently hold a block style;
+// 0x800 is the bg block bank, 0x000 the falling piece's sprite mirror
+uint16_t style_mask(const App& app, size_t base) {
     if (!app.have_styles || app.gameboy == nullptr) {
         return 0;
     }
     const std::span<const uint8_t> vram = app.gameboy->debug_vram();
     uint16_t mask = 0;
     for (size_t slot = 0; slot < 16; ++slot) {
-        const size_t base = 0x800 + slot * 16;
+        const size_t at = base + slot * 16;
         for (const std::array<uint8_t, 16>& style : app.styles) {
-            if (std::equal(style.begin(), style.end(), vram.begin() + static_cast<ptrdiff_t>(base))) {
+            if (std::equal(style.begin(), style.end(), vram.begin() + static_cast<ptrdiff_t>(at))) {
                 mask = static_cast<uint16_t>(mask | (1u << slot));
                 break;
             }
@@ -390,7 +391,7 @@ int dump_framebuffer_ppm(App& app, uint64_t frames, const char* path) {
     for (uint64_t i = 0; i < frames; ++i) {
         app.gameboy->run_frame();
     }
-    return write_ppm(*app.gameboy, style_mask(app), path) ? 0 : 1;
+    return write_ppm(*app.gameboy, style_mask(app, 0x800), style_mask(app, 0x000), path) ? 0 : 1;
 }
 
 } // namespace
@@ -579,7 +580,7 @@ void main_loop_step(void* arg) {
                     break;
                 case SDLK_ESCAPE:
                     // esc opens the game's own pause menu; inert on flat menus
-                    if (down && style_mask(app) == 0) {
+                    if (down && style_mask(app, 0x800) == 0) {
                         break;
                     }
                     gameboy.set_button(gb::Button::Start, down);
@@ -596,7 +597,7 @@ void main_loop_step(void* arg) {
             }
             if (event.type == SDL_KEYDOWN) {
                 if (event.key.keysym.sym == SDLK_F10) {
-                    write_ppm(gameboy, style_mask(app), "framebuffer.ppm");
+                    write_ppm(gameboy, style_mask(app, 0x800), style_mask(app, 0x000), "framebuffer.ppm");
                 }
                 if (event.key.keysym.sym == SDLK_t) {
                     tile_viewer.toggle();
@@ -658,11 +659,12 @@ void main_loop_step(void* arg) {
         }
         const std::span<const uint8_t> fb = gameboy.framebuffer();
         const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
-        const uint16_t block_mask = style_mask(app);
+        const uint16_t block_mask = style_mask(app, 0x800);
+        const uint16_t sprite_mask = style_mask(app, 0x000);
         for (uint32_t y = 0; y < gb::kLcdHeight; ++y) {
             for (uint32_t x = 0; x < gb::kLcdWidth; ++x) {
                 const size_t i = y * gb::kLcdWidth + x;
-                app.pixels[i] = colorize(ids[i], fb[i], x, y, block_mask);
+                app.pixels[i] = colorize(ids[i], fb[i], x, y, block_mask, sprite_mask);
             }
         }
 
