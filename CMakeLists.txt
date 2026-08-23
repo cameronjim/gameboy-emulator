@@ -82,6 +82,32 @@ list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
 include(Catch)
 catch_discover_tests(gbcore_tests)
 
+# milestone 15: the flappy rom needs gbdk-2020's sm83 toolchain; absent, skip like a missing sdl2
+set(GBDK_HOME "$ENV{GBDK_HOME}" CACHE PATH "path to a gbdk-2020 install")
+set(GB_LCC "${GBDK_HOME}/bin/lcc${CMAKE_EXECUTABLE_SUFFIX}")
+if(GBDK_HOME AND EXISTS "${GB_LCC}")
+    set(GB_FLAPPY_ROM ${CMAKE_BINARY_DIR}/flappy.gb)
+    # -yt0x03 mbc1+ram+battery, -ya1 one 8kb sram bank, -yn the 0x134 title
+    add_custom_command(
+        OUTPUT ${GB_FLAPPY_ROM}
+        COMMAND ${GB_LCC} -Wm-yt0x03 -Wm-ya1 -Wm-ynFLAPPY -o ${GB_FLAPPY_ROM}
+                ${CMAKE_SOURCE_DIR}/games/flappy/main.c
+        DEPENDS games/flappy/main.c games/flappy/flappy.h
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMENT "building flappy.gb with gbdk lcc"
+        VERBATIM)
+    add_custom_target(flappy DEPENDS ${GB_FLAPPY_ROM})
+
+    add_executable(flappy_tests games/flappy/tests/flappy_test.cpp)
+    target_compile_options(flappy_tests PRIVATE ${GB_WARNING_FLAGS})
+    target_compile_definitions(flappy_tests PRIVATE FLAPPY_ROM_PATH="${GB_FLAPPY_ROM}")
+    target_link_libraries(flappy_tests PRIVATE gbcore Catch2::Catch2WithMain)
+    add_dependencies(flappy_tests flappy)
+    catch_discover_tests(flappy_tests)
+else()
+    message(WARNING "gbdk not found (set GBDK_HOME); skipping flappy rom target")
+endif()
+
 add_executable(gbrom_harness tests/roms/harness.cpp)
 target_compile_options(gbrom_harness PRIVATE ${GB_WARNING_FLAGS})
 target_link_libraries(gbrom_harness PRIVATE gbcore)
