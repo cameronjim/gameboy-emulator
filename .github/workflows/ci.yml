@@ -38,12 +38,29 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang-format
       - name: format check
         run: |
-          find core frontend tests \( -name '*.cpp' -o -name '*.hpp' \) -print0 |
+          find core frontend tests games \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name '*.h' \) -print0 |
             xargs -0 clang-format --dry-run --Werror
       - name: generated opcodes up to date
         run: |
           python3 tools/gen_opcodes.py
           git diff --exit-code core/opcodes.inc tests/unit/opcode_meta.inc
+
+  flappy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install gbdk-2020
+        run: |
+          curl -fsSL -o gbdk.tar.gz \
+            https://github.com/gbdk-2020/gbdk-2020/releases/download/4.5.0/gbdk-linux64.tar.gz
+          tar -xzf gbdk.tar.gz -C "$HOME"
+          test -x "$HOME/gbdk/bin/lcc"
+      - name: configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DGBDK_HOME="$HOME/gbdk"
+      - name: build
+        run: cmake --build build -j
+      - name: test
+        run: ctest --test-dir build -R flappy --output-on-failure
 
   wasm:
     runs-on: ubuntu-latest
