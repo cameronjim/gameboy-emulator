@@ -33,10 +33,15 @@ void bird_update(void) {
         bird_y = kBirdCeilingY;
         bird_vy = 0;
     }
+    // resting the bird on the ground: world_kills ends the round the same frame
     if (bird_y > kBirdFloorY) {
         bird_y = kBirdFloorY;
         bird_vy = 0;
     }
+}
+
+uint8_t bird_top_px(void) {
+    return (uint8_t)(bird_y >> kFixedShift);
 }
 
 void bird_draw(void) {
