@@ -33,13 +33,29 @@ size_t count_lit_pixels(std::span<const uint8_t> fb) {
 
 constexpr uint32_t kBootFrames = 120;
 
-// the bird is the only sprite; ppu marks sprite pixels with bit 8 of the tile id
+constexpr uint8_t kBirdTileId = 0xE0;
+constexpr uint8_t kDigitTileId = 0xD0;
+
+// ppu marks sprite pixels with bit 8 of the tile id
 size_t count_sprite_pixels(const gb::Gameboy& gameboy) {
     const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
     const std::span<const uint8_t> fb = gameboy.framebuffer();
     size_t lit = 0;
     for (size_t i = 0; i < ids.size(); ++i) {
         if ((ids[i] & 0x100u) != 0 && fb[i] != 0) {
+            ++lit;
+        }
+    }
+    return lit;
+}
+
+// the bird and the score digits are separate sprite tiles, so tests must say which
+size_t count_sprite_pixels_of(const gb::Gameboy& gameboy, uint8_t tile) {
+    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
+    const std::span<const uint8_t> fb = gameboy.framebuffer();
+    size_t lit = 0;
+    for (size_t i = 0; i < ids.size(); ++i) {
+        if ((ids[i] & 0x100u) != 0 && static_cast<uint8_t>(ids[i]) == tile && fb[i] != 0) {
             ++lit;
         }
     }
@@ -53,11 +69,50 @@ int bird_y(const gb::Gameboy& gameboy) {
     const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
     const std::span<const uint8_t> fb = gameboy.framebuffer();
     for (size_t i = 0; i < ids.size(); ++i) {
-        if ((ids[i] & 0x100u) != 0 && fb[i] != 0) {
+        if ((ids[i] & 0x100u) != 0 && static_cast<uint8_t>(ids[i]) == kBirdTileId && fb[i] != 0) {
             return static_cast<int>(i / gb::kLcdWidth);
         }
     }
     return kNoBird;
+}
+
+bool hud_shows_digit(const gb::Gameboy& gameboy, uint8_t digit) {
+    return count_sprite_pixels_of(gameboy, static_cast<uint8_t>(kDigitTileId + digit)) > 0;
+}
+
+// font glyph cells only ever reach the screen through the game over banner
+bool banner_has_glyph(const gb::Gameboy& gameboy, uint8_t tile) {
+    for (uint16_t id : gameboy.framebuffer_tiles()) {
+        if ((id & 0x100u) == 0 && static_cast<uint8_t>(id) == tile) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// gbdk's ibm font lands ascii 0x20-0x7f on tiles 0x00-0x5f
+constexpr uint8_t font_tile(char c) {
+    return static_cast<uint8_t>(c - 0x20);
+}
+
+bool banner_has_nonzero_digit(const gb::Gameboy& gameboy) {
+    for (char c = '1'; c <= '9'; ++c) {
+        if (banner_has_glyph(gameboy, font_tile(c))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+constexpr size_t kSaveBestOffset = 4;
+
+uint16_t sram_best(std::span<const uint8_t> ram) {
+    return static_cast<uint16_t>(ram[kSaveBestOffset] | (ram[kSaveBestOffset + 1] << 8));
+}
+
+bool sram_has_magic(std::span<const uint8_t> ram) {
+    return ram.size() > kSaveBestOffset + 1 && ram[0] == 'F' && ram[1] == 'L' && ram[2] == 'P' &&
+           ram[3] == 'Y';
 }
 
 constexpr int kNoPipe = -1;
@@ -376,7 +431,8 @@ TEST_CASE("restart_gives_a_fresh_run") {
 }
 
 // searched locally against this rom: a flap every 21 frames threads the first gap
-constexpr std::array<uint32_t, 10> kSurvivingFlaps = {11, 32, 53, 74, 95, 116, 137, 158, 179, 200};
+// re-search after any rom change: the gap seed is div at world_init
+constexpr std::array<uint32_t, 10> kSurvivingFlaps = {12, 33, 54, 75, 96, 117, 138, 159, 180, 201};
 
 TEST_CASE("a_scripted_run_survives_the_first_pipe") {
     const std::vector<uint8_t> rom = read_flappy_rom();
@@ -397,4 +453,145 @@ TEST_CASE("a_scripted_run_survives_the_first_pipe") {
         cleared = cleared || (x != kNoPipe && x + 20 < kBirdScreenX);
     }
     REQUIRE(cleared);
+}
+
+namespace {
+
+constexpr uint32_t kScriptFrames = 220;
+
+// one frame of the scripted run
+void script_frame(gb::Gameboy& gameboy, uint32_t frame) {
+    const bool flap =
+        std::find(kSurvivingFlaps.begin(), kSurvivingFlaps.end(), frame) != kSurvivingFlaps.end();
+    gameboy.set_button(gb::Button::A, flap);
+    gameboy.run_frame();
+    gameboy.set_button(gb::Button::A, false);
+}
+
+void run_script(gb::Gameboy& gameboy, uint32_t frames) {
+    for (uint32_t frame = 0; frame < frames; ++frame) {
+        script_frame(gameboy, frame);
+    }
+}
+
+// stops flapping and waits for the banner
+void run_until_over(gb::Gameboy& gameboy, uint32_t limit) {
+    for (uint32_t i = 0; i < limit; ++i) {
+        gameboy.run_frame();
+        if (game_over_shown(gameboy)) {
+            return;
+        }
+    }
+    FAIL("the run never reached game over");
+}
+
+int16_t peak_audio(gb::Gameboy& gameboy, uint32_t frames) {
+    std::array<int16_t, 8192> buffer{};
+    int16_t peak = 0;
+    for (uint32_t i = 0; i < frames; ++i) {
+        gameboy.run_frame();
+        const size_t got = gameboy.read_audio(buffer);
+        for (size_t s = 0; s < got; ++s) {
+            const int16_t mag = static_cast<int16_t>(buffer[s] < 0 ? -buffer[s] : buffer[s]);
+            peak = std::max(peak, mag);
+        }
+    }
+    return peak;
+}
+
+} // namespace
+
+TEST_CASE("score_hud_counts_passed_pipes") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    // no pipe has gone by yet, so the hud sits on a single zero
+    REQUIRE(hud_shows_digit(gameboy, 0));
+    REQUIRE_FALSE(hud_shows_digit(gameboy, 1));
+
+    bool scored = false;
+    for (uint32_t frame = 0; frame < kScriptFrames && !scored; ++frame) {
+        script_frame(gameboy, frame);
+        REQUIRE_FALSE(game_over_shown(gameboy));
+        scored = !hud_shows_digit(gameboy, 0);
+    }
+    REQUIRE(scored);
+    REQUIRE(hud_shows_digit(gameboy, 1));
+}
+
+TEST_CASE("best_score_lands_in_sram") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    run_script(gameboy, kScriptFrames);
+    run_until_over(gameboy, 300);
+
+    const std::span<uint8_t> ram = gameboy.external_ram();
+    REQUIRE(sram_has_magic(ram));
+    REQUIRE(sram_best(ram) >= 1u);
+}
+
+TEST_CASE("best_score_survives_reload") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy first;
+    start_play(first, rom);
+    run_script(first, kScriptFrames);
+    run_until_over(first, 300);
+    const std::vector<uint8_t> saved(first.external_ram().begin(), first.external_ram().end());
+    const uint16_t best = sram_best(saved);
+    REQUIRE(best >= 1u);
+
+    gb::Gameboy second;
+    REQUIRE(second.load_rom(rom));
+    const std::span<uint8_t> ram = second.external_ram();
+    REQUIRE(ram.size() == saved.size());
+    std::copy(saved.begin(), saved.end(), ram.begin());
+
+    // a scoreless run must read the saved best instead of re-initialising it
+    run(second, kBootFrames);
+    press(second, gb::Button::Start, 2);
+    run(second, kEnterPlayFrames);
+    run_until_over(second, 300);
+    REQUIRE(sram_has_magic(second.external_ram()));
+    REQUIRE(sram_best(second.external_ram()) == best);
+}
+
+TEST_CASE("game_over_shows_best") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy quiet;
+    start_play(quiet, rom);
+    run_until_over(quiet, 300);
+    REQUIRE(banner_has_glyph(quiet, font_tile('S')));
+    REQUIRE(banner_has_glyph(quiet, font_tile('B')));
+    // a scoreless first death: score and best both read zero
+    REQUIRE(banner_has_glyph(quiet, font_tile('0')));
+    REQUIRE_FALSE(banner_has_nonzero_digit(quiet));
+
+    gb::Gameboy scored;
+    start_play(scored, rom);
+    run_script(scored, kScriptFrames);
+    run_until_over(scored, 300);
+    REQUIRE(banner_has_nonzero_digit(scored));
+}
+
+TEST_CASE("flap_makes_sound") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    std::array<int16_t, 8192> drain{};
+    while (gameboy.read_audio(drain) != 0) {
+    }
+
+    // measured locally: silence is exactly 0 and the flap peaks near 3800
+    const int16_t quiet = peak_audio(gameboy, 10);
+    REQUIRE(quiet < 64);
+    gameboy.set_button(gb::Button::A, true);
+    gameboy.run_frame();
+    gameboy.set_button(gb::Button::A, false);
+    REQUIRE(peak_audio(gameboy, 10) > 1000);
 }
