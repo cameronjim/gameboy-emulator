@@ -6,4 +6,9 @@
 // one 8x8 2bpp tile: the bird, facing right
 extern const uint8_t kBirdTile[16];
 
+// four tiles at 0xa0: pipe body left, body right, cap left, cap right
+extern const uint8_t kPipeTiles[64];
+
+extern const uint8_t kGroundTile[16];
+
 #endif

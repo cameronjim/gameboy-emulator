@@ -1,0 +1,138 @@
+#include "world.h"
+
+#include "assets.h"
+#include "flappy.h"
+
+#include <gb/gb.h>
+#include <stdint.h>
+
+// px scrolled since the round started; the low byte is scx because the map is 256 px wide
+static uint16_t world_x;
+// world column the streamer writes next; it always runs 31 columns ahead of the left edge
+static uint16_t next_col;
+// position inside the 12 column pipe cycle
+static uint8_t phase;
+static uint8_t gen_pipe;
+// gap top row by pipe index; only three pipes ever live in the ring at once
+static uint8_t gap_top[4];
+static uint8_t coll_pipe;
+static uint16_t coll_pipe_x;
+static uint8_t rng_state;
+static uint8_t column[kMapRows];
+
+static uint8_t rng_next(void) {
+    rng_state = (uint8_t)(rng_state * kRngMul + kRngAdd);
+    return rng_state;
+}
+
+static void fill_sky(void) {
+    uint8_t r;
+    for (r = 0; r < kPlayRows; ++r) {
+        column[r] = kSkyTileId;
+    }
+    column[kPlayRows] = kGroundTileId;
+    column[kPlayRows + 1U] = kGroundTileId;
+}
+
+static void fill_pipe(uint8_t g, uint8_t body, uint8_t cap) {
+    uint8_t r;
+    for (r = 0; r < g; ++r) {
+        column[r] = body;
+    }
+    column[g - 1U] = cap;
+    for (r = (uint8_t)(g + kPipeGapRows); r < kPlayRows; ++r) {
+        column[r] = body;
+    }
+    column[g + kPipeGapRows] = cap;
+}
+
+// writes one world column into the ring slot that just scrolled off the left edge
+static void stream_column(void) {
+    uint8_t kind = 0U;
+    uint8_t p = gen_pipe;
+
+    if (next_col >= kFirstPipeCol) {
+        if (phase == 0U) {
+            gap_top[p & 3U] = (uint8_t)(kGapTopMin + rng_next() % (kGapTopMax - kGapTopMin + 1U));
+            kind = 1U;
+        } else if (phase < kPipeWidthCols) {
+            kind = 2U;
+        }
+        ++phase;
+        if (phase == kPipeSpacingCols) {
+            phase = 0U;
+            ++gen_pipe;
+        }
+    }
+
+    fill_sky();
+    if (kind == 1U) {
+        fill_pipe(gap_top[p & 3U], kPipeBodyLeftTileId, kPipeCapLeftTileId);
+    } else if (kind == 2U) {
+        fill_pipe(gap_top[p & 3U], kPipeBodyRightTileId, kPipeCapRightTileId);
+    }
+
+    set_bkg_tiles((uint8_t)(next_col & (kMapCols - 1U)), 0, 1, kMapRows, column);
+    ++next_col;
+}
+
+void world_init(void) {
+    uint8_t i;
+
+    // div free-runs at 16384 hz, so a human's press time picks the round
+    rng_state = DIV_REG;
+    world_x = 0;
+    next_col = 0;
+    phase = 0;
+    gen_pipe = 0;
+    coll_pipe = 0;
+    coll_pipe_x = kFirstPipeWorldX;
+
+    set_bkg_data(kPipeBodyLeftTileId, 4, kPipeTiles);
+    set_bkg_data(kGroundTileId, 1, kGroundTile);
+
+    SCX_REG = 0;
+    SCY_REG = 0;
+    for (i = 0; i < kMapCols; ++i) {
+        stream_column();
+    }
+}
+
+void world_scroll(void) {
+    ++world_x;
+    SCX_REG = (uint8_t)world_x;
+    if ((world_x & 7U) == 0U) {
+        stream_column();
+    }
+}
+
+uint8_t world_kills(uint8_t bird_top_px) {
+    uint16_t bx0;
+    uint16_t bx1;
+    uint8_t bird_bottom;
+    uint8_t gtop;
+
+    bird_bottom = (uint8_t)(bird_top_px + kBirdSizePx);
+    if (bird_bottom >= kGroundTopPx) {
+        return 1U;
+    }
+
+    bx0 = (uint16_t)(world_x + kBirdScreenX);
+    bx1 = (uint16_t)(bx0 + kBirdSizePx - 1U);
+    if (bx0 > (uint16_t)(coll_pipe_x + kPipeWidthPx - 1U)) {
+        coll_pipe_x += kPipeSpacingPx;
+        ++coll_pipe;
+    }
+    if (bx1 < coll_pipe_x) {
+        return 0U;
+    }
+
+    gtop = (uint8_t)(gap_top[coll_pipe & 3U] << 3);
+    if (bird_top_px < gtop) {
+        return 1U;
+    }
+    if (bird_bottom > (uint8_t)(gtop + kPipeGapPx)) {
+        return 1U;
+    }
+    return 0U;
+}
