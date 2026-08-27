@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <span>
 #include <string>
 #include <vector>
@@ -33,8 +34,17 @@ size_t count_lit_pixels(std::span<const uint8_t> fb) {
 
 constexpr uint32_t kBootFrames = 120;
 
-constexpr uint8_t kBirdTileId = 0xE0;
+// the bird is any of its three flap frames
+constexpr uint8_t kBirdTileFirst = 0xE0;
+constexpr uint8_t kBirdTileLast = 0xE2;
 constexpr uint8_t kDigitTileId = 0xD0;
+constexpr uint8_t kPanelTileId = 0xB8;
+constexpr uint8_t kPanelEdgeTileId = 0xB9;
+
+bool is_bird_pixel(uint16_t id) {
+    const uint8_t tile = static_cast<uint8_t>(id);
+    return (id & 0x100u) != 0 && tile >= kBirdTileFirst && tile <= kBirdTileLast;
+}
 
 // ppu marks sprite pixels with bit 8 of the tile id
 size_t count_sprite_pixels(const gb::Gameboy& gameboy) {
@@ -69,15 +79,98 @@ int bird_y(const gb::Gameboy& gameboy) {
     const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
     const std::span<const uint8_t> fb = gameboy.framebuffer();
     for (size_t i = 0; i < ids.size(); ++i) {
-        if ((ids[i] & 0x100u) != 0 && static_cast<uint8_t>(ids[i]) == kBirdTileId && fb[i] != 0) {
+        if (is_bird_pixel(ids[i]) && fb[i] != 0) {
             return static_cast<int>(i / gb::kLcdWidth);
         }
     }
     return kNoBird;
 }
 
+size_t count_bird_pixels(const gb::Gameboy& gameboy) {
+    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
+    const std::span<const uint8_t> fb = gameboy.framebuffer();
+    size_t lit = 0;
+    for (size_t i = 0; i < ids.size(); ++i) {
+        if (is_bird_pixel(ids[i]) && fb[i] != 0) {
+            ++lit;
+        }
+    }
+    return lit;
+}
+
 bool hud_shows_digit(const gb::Gameboy& gameboy, uint8_t digit) {
     return count_sprite_pixels_of(gameboy, static_cast<uint8_t>(kDigitTileId + digit)) > 0;
+}
+
+// one drawn hud digit: the glyph tile plus the extent of its sprite pixels
+struct DigitRun {
+    uint8_t digit;
+    int x0;
+    int x1;
+    int y0;
+    int y1;
+    size_t pixels;
+};
+
+// the hud sits in the top rows; each digit badge leaves a blank column beside the next
+std::vector<DigitRun> hud_digits(const gb::Gameboy& gameboy) {
+    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
+    const std::span<const uint8_t> fb = gameboy.framebuffer();
+    constexpr size_t kHudBandRows = 40;
+    std::vector<DigitRun> runs;
+    bool open = false;
+    for (size_t x = 0; x < gb::kLcdWidth; ++x) {
+        int digit = -1;
+        int y0 = 0;
+        int y1 = 0;
+        size_t pixels = 0;
+        for (size_t y = 0; y < kHudBandRows; ++y) {
+            const size_t i = y * gb::kLcdWidth + x;
+            const uint8_t tile = static_cast<uint8_t>(ids[i]);
+            if ((ids[i] & 0x100u) == 0 || tile < kDigitTileId || tile > kDigitTileId + 9 || fb[i] == 0) {
+                continue;
+            }
+            if (pixels == 0) {
+                digit = tile - kDigitTileId;
+                y0 = static_cast<int>(y);
+            }
+            y1 = static_cast<int>(y);
+            ++pixels;
+        }
+        if (digit < 0) {
+            open = false;
+            continue;
+        }
+        if (!open) {
+            runs.push_back(
+                DigitRun{static_cast<uint8_t>(digit), static_cast<int>(x), static_cast<int>(x), y0, y1, 0});
+            open = true;
+        }
+        DigitRun& run = runs.back();
+        run.x1 = static_cast<int>(x);
+        run.y0 = std::min(run.y0, y0);
+        run.y1 = std::max(run.y1, y1);
+        run.pixels += pixels;
+    }
+    return runs;
+}
+
+int hud_score(const gb::Gameboy& gameboy) {
+    int value = 0;
+    for (const DigitRun& run : hud_digits(gameboy)) {
+        value = value * 10 + run.digit;
+    }
+    return value;
+}
+
+// the solid banner fill only ever reaches the screen through the game over window
+bool banner_panel_shown(const gb::Gameboy& gameboy) {
+    for (uint16_t id : gameboy.framebuffer_tiles()) {
+        if ((id & 0x100u) == 0 && static_cast<uint8_t>(id) == kPanelTileId) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // font glyph cells only ever reach the screen through the game over banner
@@ -241,13 +334,64 @@ TEST_CASE("flappy_boot_is_deterministic") {
     REQUIRE(std::equal(a.begin(), a.end(), b.begin()));
 }
 
-TEST_CASE("title_has_no_sprites") {
+TEST_CASE("title_shows_bobbing_bird") {
     const std::vector<uint8_t> rom = read_flappy_rom();
 
     gb::Gameboy gameboy;
     REQUIRE(gameboy.load_rom(rom));
     run(gameboy, kBootFrames);
-    REQUIRE(count_sprite_pixels(gameboy) == 0u);
+    REQUIRE(count_bird_pixels(gameboy) > 0u);
+
+    int lowest = 0;
+    int highest = gb::kLcdHeight;
+    for (uint32_t i = 0; i < 120; ++i) {
+        gameboy.run_frame();
+        const int y = bird_y(gameboy);
+        REQUIRE(y != kNoBird);
+        lowest = std::max(lowest, y);
+        highest = std::min(highest, y);
+        // the title never falls into a run, so the banner must never appear
+        REQUIRE_FALSE(banner_panel_shown(gameboy));
+    }
+    // a bob, not a fall: the bird oscillates inside a narrow band
+    REQUIRE(lowest - highest >= 2);
+    REQUIRE(lowest - highest <= 16);
+}
+
+TEST_CASE("run_starts_on_first_flap") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy gameboy;
+    REQUIRE(gameboy.load_rom(rom));
+    run(gameboy, kBootFrames);
+    const int hovering = bird_y(gameboy);
+    REQUIRE(hovering != kNoBird);
+
+    press(gameboy, gb::Button::A, 2);
+    std::vector<int> ys;
+    for (uint32_t i = 0; i < 40; ++i) {
+        gameboy.run_frame();
+        const int y = bird_y(gameboy);
+        if (y != kNoBird) {
+            ys.push_back(y);
+        }
+    }
+    REQUIRE(ys.size() > 20u);
+    const size_t apex = static_cast<size_t>(std::min_element(ys.begin(), ys.end()) - ys.begin());
+    // the press is the first flap: the bird climbs clear of its hover height before it sinks
+    REQUIRE(ys[apex] < hovering - 8);
+    for (size_t i = 1; i <= apex; ++i) {
+        REQUIRE(ys[i] <= ys[i - 1]);
+    }
+    REQUIRE(ys.back() > ys[apex]);
+
+    // and the world is running: the first pipe scrolls in
+    bool pipe = false;
+    for (uint32_t frame = 0; frame < 260 && !pipe; ++frame) {
+        step_flapping(gameboy, frame);
+        pipe = leftmost_pipe_x(gameboy) != kNoPipe;
+    }
+    REQUIRE(pipe);
 }
 
 TEST_CASE("start_spawns_the_bird") {
@@ -267,8 +411,16 @@ TEST_CASE("bird_falls_without_input") {
     start_play(gameboy, rom);
     const int before = bird_y(gameboy);
     REQUIRE(before != kNoBird);
-    run(gameboy, 30);
-    REQUIRE(bird_y(gameboy) > before);
+    // the start press flaps, so gravity has to undo that climb first
+    int lowest = before;
+    for (uint32_t i = 0; i < 45; ++i) {
+        gameboy.run_frame();
+        const int y = bird_y(gameboy);
+        if (y != kNoBird) {
+            lowest = std::max(lowest, y);
+        }
+    }
+    REQUIRE(lowest > before);
 }
 
 TEST_CASE("flap_lifts_the_bird") {
@@ -296,13 +448,17 @@ TEST_CASE("bird_never_sinks_past_the_ground") {
     gb::Gameboy gameboy;
     start_play(gameboy, rom);
     bool ended = false;
-    for (uint32_t i = 0; i < 600; ++i) {
+    for (uint32_t i = 0; i < 600 && !ended; ++i) {
         gameboy.run_frame();
+        // the banner hides the corpse, so stop reading the bird once the run ends
+        ended = game_over_shown(gameboy);
+        if (ended) {
+            break;
+        }
         const int y = bird_y(gameboy);
         REQUIRE(y != kNoBird);
         REQUIRE(y >= 0);
         REQUIRE(y + kBirdSizePx <= kGroundTopPx);
-        ended = ended || game_over_shown(gameboy);
     }
     // the ceiling still clamps, but the ground ends the run instead of holding the bird up
     REQUIRE(ended);
@@ -318,6 +474,10 @@ TEST_CASE("holding_a_does_not_autofire") {
     gameboy.set_button(gb::Button::A, true);
     for (uint32_t i = 0; i < 60; ++i) {
         gameboy.run_frame();
+        // the banner hides the corpse, so the sample run stops at the crash
+        if (game_over_shown(gameboy)) {
+            break;
+        }
         ys.push_back(bird_y(gameboy));
     }
     gameboy.set_button(gb::Button::A, false);
@@ -379,14 +539,23 @@ TEST_CASE("falling_to_the_ground_ends_the_run") {
 
     gb::Gameboy gameboy;
     start_play(gameboy, rom);
-    run(gameboy, 120);
-    REQUIRE(game_over_shown(gameboy));
 
-    const int resting = bird_y(gameboy);
+    // the banner covers the corpse, so read the resting height on the frame it lands
+    int resting = kNoBird;
+    for (uint32_t i = 0; i < 200 && !game_over_shown(gameboy); ++i) {
+        gameboy.run_frame();
+        const int y = bird_y(gameboy);
+        if (y != kNoBird) {
+            resting = y;
+        }
+    }
+    REQUIRE(game_over_shown(gameboy));
     REQUIRE(resting != kNoBird);
     REQUIRE(resting > kGroundTopPx - 2 * kBirdSizePx);
+
+    // the round is frozen: no sprite ever climbs back out from behind the banner
     run(gameboy, 60);
-    REQUIRE(bird_y(gameboy) == resting);
+    REQUIRE(bird_y(gameboy) == kNoBird);
 }
 
 TEST_CASE("hitting_a_pipe_ends_the_run") {
@@ -413,7 +582,7 @@ TEST_CASE("restart_gives_a_fresh_run") {
 
     gb::Gameboy gameboy;
     start_play(gameboy, rom);
-    run(gameboy, 120);
+    run(gameboy, 200);
     REQUIRE(game_over_shown(gameboy));
 
     press(gameboy, gb::Button::Start, 2);
@@ -426,13 +595,23 @@ TEST_CASE("restart_gives_a_fresh_run") {
     const int y = bird_y(gameboy);
     REQUIRE(y != kNoBird);
     REQUIRE(y + kBirdSizePx < kGroundTopPx);
-    run(gameboy, 12);
+    // the restart press flaps too, so the bird climbs before gravity takes it back down
+    run(gameboy, 40);
     REQUIRE(bird_y(gameboy) > y);
 }
 
-// searched locally against this rom: a flap every 21 frames threads the first gap
+// searched locally against this rom with a lookahead autopilot; frame 0 is the start press itself
 // re-search after any rom change: the gap seed is div at world_init
-constexpr std::array<uint32_t, 10> kSurvivingFlaps = {12, 33, 54, 75, 96, 117, 138, 159, 180, 201};
+constexpr std::array<uint32_t, 10> kSurvivingFlaps = {0, 30, 36, 42, 67, 98, 119, 151, 188, 218};
+
+// the same search carried out to score 14, for the hud and difficulty tests
+constexpr std::array<uint32_t, 57> kLongScript = {
+    0,    30,   36,   42,   67,   98,   119,  151,  188,  218,  248,  266,  297,  315,  344,
+    375,  405,  435,  472,  502,  532,  563,  593,  599,  634,  674,  702,  733,  764,  793,
+    824,  830,  842,  848,  879,  886,  921,  968,  982,  1018, 1034, 1040, 1046, 1072, 1103,
+    1146, 1151, 1184, 1190, 1196, 1202, 1208, 1217, 1252, 1278, 1298, 1328};
+// the long script clears its fourteenth pipe at this frame and stops flapping soon after
+constexpr uint32_t kLongScriptFrames = 1360;
 
 TEST_CASE("a_scripted_run_survives_the_first_pipe") {
     const std::vector<uint8_t> rom = read_flappy_rom();
@@ -474,6 +653,13 @@ void run_script(gb::Gameboy& gameboy, uint32_t frames) {
     }
 }
 
+void long_script_frame(gb::Gameboy& gameboy, uint32_t frame) {
+    const bool flap = std::find(kLongScript.begin(), kLongScript.end(), frame) != kLongScript.end();
+    gameboy.set_button(gb::Button::A, flap);
+    gameboy.run_frame();
+    gameboy.set_button(gb::Button::A, false);
+}
+
 // stops flapping and waits for the banner
 void run_until_over(gb::Gameboy& gameboy, uint32_t limit) {
     for (uint32_t i = 0; i < limit; ++i) {
@@ -485,18 +671,20 @@ void run_until_over(gb::Gameboy& gameboy, uint32_t limit) {
     FAIL("the run never reached game over");
 }
 
-int16_t peak_audio(gb::Gameboy& gameboy, uint32_t frames) {
+// peak to peak, not peak: a triggered channel at volume zero still sits at its dac floor
+int32_t audio_swing(gb::Gameboy& gameboy, uint32_t frames) {
     std::array<int16_t, 8192> buffer{};
-    int16_t peak = 0;
+    int16_t high = std::numeric_limits<int16_t>::min();
+    int16_t low = std::numeric_limits<int16_t>::max();
     for (uint32_t i = 0; i < frames; ++i) {
         gameboy.run_frame();
         const size_t got = gameboy.read_audio(buffer);
         for (size_t s = 0; s < got; ++s) {
-            const int16_t mag = static_cast<int16_t>(buffer[s] < 0 ? -buffer[s] : buffer[s]);
-            peak = std::max(peak, mag);
+            high = std::max(high, buffer[s]);
+            low = std::min(low, buffer[s]);
         }
     }
-    return peak;
+    return high < low ? 0 : static_cast<int32_t>(high) - static_cast<int32_t>(low);
 }
 
 } // namespace
@@ -583,15 +771,128 @@ TEST_CASE("flap_makes_sound") {
 
     gb::Gameboy gameboy;
     start_play(gameboy, rom);
+    // the start press is itself a flap, so let its envelope run out first
+    run(gameboy, 26);
     std::array<int16_t, 8192> drain{};
     while (gameboy.read_audio(drain) != 0) {
     }
 
-    // measured locally: silence is exactly 0 and the flap peaks near 3800
-    const int16_t quiet = peak_audio(gameboy, 10);
-    REQUIRE(quiet < 64);
+    // measured locally: a decayed channel holds one dc level and the flap swings about 7600
+    const int32_t quiet = audio_swing(gameboy, 6);
+    REQUIRE(quiet < 512);
     gameboy.set_button(gb::Button::A, true);
     gameboy.run_frame();
     gameboy.set_button(gb::Button::A, false);
-    REQUIRE(peak_audio(gameboy, 10) > 1000);
+    REQUIRE(audio_swing(gameboy, 10) > 1000);
+}
+
+TEST_CASE("two_digit_score_renders_fully") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    bool two = false;
+    for (uint32_t frame = 0; frame < kLongScriptFrames && !two; ++frame) {
+        long_script_frame(gameboy, frame);
+        REQUIRE_FALSE(game_over_shown(gameboy));
+        two = hud_score(gameboy) >= 10;
+    }
+    REQUIRE(two);
+
+    const std::vector<DigitRun> digits = hud_digits(gameboy);
+    REQUIRE(digits.size() == 2u);
+    for (const DigitRun& run : digits) {
+        // a badge is a full 8 row tile seven columns wide, and none of it is off screen
+        REQUIRE(run.y1 - run.y0 == 7);
+        REQUIRE(run.x1 - run.x0 == 6);
+        REQUIRE(run.x0 > 0);
+        REQUIRE(run.x1 < static_cast<int>(gb::kLcdWidth) - 1);
+        REQUIRE(run.pixels >= 40u);
+    }
+    REQUIRE(digits[1].x0 - digits[0].x0 == 8);
+}
+
+namespace {
+
+// px per frame over the longest stretch a pipe stays fully on screen inside a score band
+double scroll_rate(const std::vector<int>& xs, const std::vector<int>& scores, int lo, int hi) {
+    int best_frames = 0;
+    int best_px = 0;
+    for (size_t i = 1; i < xs.size(); ++i) {
+        const auto in_band = [&](size_t k) { return scores[k] >= lo && scores[k] <= hi; };
+        if (!in_band(i) || xs[i] < 2 || xs[i - 1] < 2) {
+            continue;
+        }
+        size_t j = i;
+        int px = 0;
+        while (j < xs.size() && xs[j] >= 2 && xs[j] <= xs[j - 1] && in_band(j)) {
+            px += xs[j - 1] - xs[j];
+            ++j;
+        }
+        if (static_cast<int>(j - i) > best_frames) {
+            best_frames = static_cast<int>(j - i);
+            best_px = px;
+        }
+        i = j;
+    }
+    REQUIRE(best_frames > 30);
+    return static_cast<double>(best_px) / best_frames;
+}
+
+} // namespace
+
+TEST_CASE("difficulty_ramps") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    std::vector<int> xs;
+    std::vector<int> scores;
+    for (uint32_t frame = 0; frame < kLongScriptFrames; ++frame) {
+        long_script_frame(gameboy, frame);
+        REQUIRE_FALSE(game_over_shown(gameboy));
+        xs.push_back(leftmost_pipe_x(gameboy));
+        scores.push_back(hud_score(gameboy));
+    }
+    REQUIRE(scores.back() >= 11);
+
+    const double early = scroll_rate(xs, scores, 0, 4);
+    const double late = scroll_rate(xs, scores, 11, 99);
+    // the table steps 1.00 to 1.25 px per frame once ten pipes are behind the bird
+    REQUIRE(early > 0.9);
+    REQUIRE(early < 1.1);
+    REQUIRE(late > early + 0.15);
+    REQUIRE(late < 1.4);
+}
+
+TEST_CASE("game_over_panel_is_solid") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    run_until_over(gameboy, 300);
+    run(gameboy, 4);
+    REQUIRE(banner_panel_shown(gameboy));
+
+    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
+    constexpr size_t kPanelTop = 88;
+    constexpr size_t kPanelInnerTop = kPanelTop + 8;
+    constexpr size_t kPanelInnerEnd = gb::kLcdHeight - 8;
+    for (size_t x = 0; x < gb::kLcdWidth; ++x) {
+        REQUIRE(static_cast<uint8_t>(ids[kPanelTop * gb::kLcdWidth + x]) == kPanelEdgeTileId);
+        REQUIRE(static_cast<uint8_t>(ids[(gb::kLcdHeight - 1) * gb::kLcdWidth + x]) == kPanelEdgeTileId);
+    }
+    for (size_t y = kPanelInnerTop; y < kPanelInnerEnd; ++y) {
+        for (size_t x = 0; x < gb::kLcdWidth; ++x) {
+            // no sky cell survives between the borders, so the frozen scene cannot show through
+            REQUIRE(static_cast<uint8_t>(ids[y * gb::kLcdWidth + x]) != 0x00u);
+        }
+    }
+    // the corpse carries the bg priority bit, so the ppu drops its pixels behind the panel
+    for (size_t y = kPanelTop; y < gb::kLcdHeight; ++y) {
+        for (size_t x = 0; x < gb::kLcdWidth; ++x) {
+            REQUIRE_FALSE(is_bird_pixel(ids[y * gb::kLcdWidth + x]));
+        }
+    }
+    REQUIRE(banner_has_glyph(gameboy, font_tile('G')));
 }
