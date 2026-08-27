@@ -115,7 +115,7 @@ struct Options {
     const char* dump_ppm_path = nullptr;
     uint64_t trace_from = 0;
     uint64_t frames = 600;
-    int volume = 40;
+    int volume = 25;
     bool ok = true;
 };
 
@@ -570,6 +570,7 @@ void main_loop_step(void* arg) {
                     break;
                 case SDLK_f:
                 case SDLK_z:
+                case SDLK_SPACE:
                     gameboy.set_button(gb::Button::A, down);
                     break;
                 case SDLK_g:

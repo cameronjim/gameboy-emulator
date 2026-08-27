@@ -29,7 +29,7 @@ The Game Boy had 8 buttons. They map to your keyboard like this:
 | Your keyboard      | Game Boy button |
 | ------------------ | --------------- |
 | Arrows or `WASD`   | D-pad (up/down/left/right) |
-| `F` (or `Z`)       | A button (confirm / rotate) |
+| `F` or `Space` (or `Z`) | A button (confirm / rotate / flap) |
 | `G` (or `X`)       | B button (cancel) |
 | `E` or `Enter`     | Start (start game / pause menu) |
 | `Esc`              | Back: leaves credits/high scores, opens the pause menu in game |
@@ -83,13 +83,13 @@ Other games render clean white-on-black.
 Put a 32x32 `gbemu.bmp` next to `gbemu-sdl.exe` to give the window and
 taskbar an icon. A game can override it with its own: name the file after the
 game plus `.icon.bmp` (for example `tetris.gb.icon.bmp` next to `tetris.gb`).
-Ready-made icons live in `assets/icons/` — copy the one you like.
+The default icon lives at `assets/icons/gbemu.bmp` (a little Game Boy).
 
 ## Options (optional, for the curious)
 
 Run from a terminal to use these:
 
-- `--volume 0-100` — sound volume (default 40).
+- `--volume 0-100` — sound volume (default 25).
 
 ## Flappy Bird (our own game)
 
@@ -97,7 +97,8 @@ Run from a terminal to use these:
 a real Game Boy rom that happens to be born on this emulator. Launch it like
 any game (`gbemu-sdl.exe flappy.gb` or drag the file onto the exe).
 
-- `E`/`Enter` starts a round, `F` (or `Z`) flaps.
+- `F` or `Space` flaps (and starts the round — the run begins on your first
+  flap, so you set the pace).
 - Pass a pipe for a point; touch a pipe or the ground and it's over.
 - Your best score saves automatically (battery save, `.sav` file).
 
