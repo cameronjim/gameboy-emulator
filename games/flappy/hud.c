@@ -7,7 +7,13 @@
 #include <stdint.h>
 
 void hud_init(void) {
+    uint8_t i;
+
     set_sprite_data(kDigitTileId, kDigitCount, kDigitTiles);
+    // digits must never inherit the bg priority the dead bird leaves on its own sprite
+    for (i = 0; i < kHudDigits; ++i) {
+        set_sprite_prop((uint8_t)(kHudFirstSprite + i), 0);
+    }
     hud_draw(0);
 }
 

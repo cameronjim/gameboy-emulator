@@ -36,10 +36,18 @@ static void draw_title(void) {
     draw_ground_strip();
 }
 
+// spaces would punch sky holes in the panel, so they take the panel fill instead
+static uint8_t panel_tile(char c) {
+    if (c == ' ') {
+        return kPanelTileId;
+    }
+    return (uint8_t)(kFontFirstTile + (uint8_t)c - kFontFirstChar);
+}
+
 static void win_print(uint8_t x, uint8_t y, const char* text) {
     uint8_t n = 0;
     while (text[n] != '\0') {
-        win_row[n] = (uint8_t)(kFontFirstTile + (uint8_t)text[n] - kFontFirstChar);
+        win_row[n] = panel_tile(text[n]);
         ++n;
     }
     set_win_tiles(x, y, n, 1, win_row);
@@ -56,24 +64,24 @@ static void win_print_value(uint8_t x, uint8_t y, const char* label, uint16_t va
         value = kScoreMax;
     }
     for (c = 0; c < kWinCols; ++c) {
-        win_row[c] = kSkyTileId;
+        win_row[c] = kPanelTileId;
     }
     while (label[n] != '\0') {
-        win_row[x + n] = (uint8_t)(kFontFirstTile + (uint8_t)label[n] - kFontFirstChar);
+        win_row[x + n] = panel_tile(label[n]);
         ++n;
     }
     ++n;
     hundreds = (uint8_t)(value / 100U);
     tens = (uint8_t)((value / 10U) % 10U);
     if (hundreds != 0U) {
-        win_row[x + n] = (uint8_t)(kFontFirstTile + '0' + hundreds - kFontFirstChar);
+        win_row[x + n] = panel_tile((char)('0' + hundreds));
         ++n;
     }
     if (hundreds != 0U || tens != 0U) {
-        win_row[x + n] = (uint8_t)(kFontFirstTile + '0' + tens - kFontFirstChar);
+        win_row[x + n] = panel_tile((char)('0' + tens));
         ++n;
     }
-    win_row[x + n] = (uint8_t)(kFontFirstTile + '0' + (uint8_t)(value % 10U) - kFontFirstChar);
+    win_row[x + n] = panel_tile((char)('0' + (uint8_t)(value % 10U)));
     set_win_tiles(0, y, kWinCols, 1, win_row);
 }
 
@@ -82,9 +90,10 @@ static void build_banner(void) {
     uint8_t r;
     uint8_t c;
 
+    set_bkg_data(kPanelTileId, kPanelTileCount, kPanelTiles);
     for (r = 0; r < kWinRows; ++r) {
         for (c = 0; c < kWinCols; ++c) {
-            win_row[c] = (r < kWinGroundRow) ? kSkyTileId : kGroundTileId;
+            win_row[c] = (r == kPanelTopRow || r == kPanelBottomRow) ? kPanelEdgeTileId : kPanelTileId;
         }
         set_win_tiles(0, r, kWinCols, 1, win_row);
     }
@@ -113,6 +122,7 @@ void main(void) {
     uint8_t keys = 0;
     uint8_t prev = 0;
     uint8_t pressed = 0;
+    uint8_t start = 0;
     uint8_t reveal = 0;
     uint8_t dead = 0;
     uint16_t shown = 0;
@@ -123,6 +133,9 @@ void main(void) {
     sfx_init();
     save_init();
     draw_title();
+    bird_init();
+    SPRITES_8x8;
+    SHOW_SPRITES;
     SHOW_BKG;
     DISPLAY_ON;
 
@@ -141,8 +154,18 @@ void main(void) {
         pressed = (uint8_t)(keys & (uint8_t)~prev);
 
         if (state != kStatePlay) {
-            if (pressed & J_START) {
+            // a starts a run from the title only; game over still waits for start
+            start =
+                (state == kStateTitle) ? (uint8_t)(pressed & (J_START | J_A)) : (uint8_t)(pressed & J_START);
+            if (state == kStateTitle) {
+                bird_hover();
+            }
+            if (start) {
                 enter_play();
+                // the press that starts the run is also its first flap
+                bird_flap();
+                bird_draw();
+                sfx_flap();
                 shown = 0;
                 score = 0;
                 state = kStatePlay;
@@ -166,6 +189,7 @@ void main(void) {
         }
         if (dead) {
             sfx_hit();
+            bird_die();
             save_record(score);
             reveal = 1;
             state = kStateOver;
