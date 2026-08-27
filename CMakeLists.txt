@@ -94,9 +94,15 @@ if(GBDK_HOME AND EXISTS "${GB_LCC}")
                 ${CMAKE_SOURCE_DIR}/games/flappy/main.c
                 ${CMAKE_SOURCE_DIR}/games/flappy/bird.c
                 ${CMAKE_SOURCE_DIR}/games/flappy/world.c
+                ${CMAKE_SOURCE_DIR}/games/flappy/hud.c
+                ${CMAKE_SOURCE_DIR}/games/flappy/save.c
+                ${CMAKE_SOURCE_DIR}/games/flappy/sfx.c
                 ${CMAKE_SOURCE_DIR}/games/flappy/assets.c
         DEPENDS games/flappy/main.c games/flappy/bird.c games/flappy/bird.h
                 games/flappy/world.c games/flappy/world.h
+                games/flappy/hud.c games/flappy/hud.h
+                games/flappy/save.c games/flappy/save.h
+                games/flappy/sfx.c games/flappy/sfx.h
                 games/flappy/assets.c games/flappy/assets.h games/flappy/flappy.h
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
         COMMENT "building flappy.gb with gbdk lcc"
