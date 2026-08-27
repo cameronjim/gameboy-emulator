@@ -17,6 +17,7 @@ static uint8_t gen_pipe;
 static uint8_t gap_top[4];
 static uint8_t coll_pipe;
 static uint16_t coll_pipe_x;
+static uint16_t score;
 static uint8_t rng_state;
 static uint8_t column[kMapRows];
 
@@ -87,6 +88,7 @@ void world_init(void) {
     gen_pipe = 0;
     coll_pipe = 0;
     coll_pipe_x = kFirstPipeWorldX;
+    score = 0;
 
     set_bkg_data(kPipeBodyLeftTileId, 4, kPipeTiles);
     set_bkg_data(kGroundTileId, 1, kGroundTile);
@@ -122,6 +124,8 @@ uint8_t world_kills(uint8_t bird_top_px) {
     if (bx0 > (uint16_t)(coll_pipe_x + kPipeWidthPx - 1U)) {
         coll_pipe_x += kPipeSpacingPx;
         ++coll_pipe;
+        // the bird's left edge just cleared the pipe's right edge
+        ++score;
     }
     if (bx1 < coll_pipe_x) {
         return 0U;
@@ -135,4 +139,8 @@ uint8_t world_kills(uint8_t bird_top_px) {
         return 1U;
     }
     return 0U;
+}
+
+uint16_t world_score(void) {
+    return score;
 }
