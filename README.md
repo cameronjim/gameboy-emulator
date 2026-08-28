@@ -134,6 +134,9 @@ cartridge dump, just drag that file onto the exe instead.
 
 ## For developers
 
+See [SETUP.md](SETUP.md) for full setup instructions, including building the
+game roms and the one-command Windows install script.
+
 C++20, SDL2, no other dependencies. Build:
 
 ```bash
