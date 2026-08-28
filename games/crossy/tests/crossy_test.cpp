@@ -44,10 +44,12 @@ constexpr uint8_t kGrassTileId = 0xA0;
 constexpr uint8_t kTreeTileId = 0xA1;
 constexpr uint8_t kRoadTileId = 0xA2;
 constexpr uint8_t kRoadStripeTileId = 0xA3;
+constexpr uint8_t kWaterTileId = 0xA4;
 constexpr uint8_t kChickTileId = 0xE0;
 constexpr uint8_t kChickHopTileId = 0xE1;
 constexpr uint8_t kCarFrontTileId = 0xC0;
 constexpr uint8_t kCarRearTileId = 0xC1;
+constexpr uint8_t kLogTileId = 0xC4;
 constexpr uint8_t kDigitTileId = 0xD0;
 
 // the popup draws from an inverted copy of the font parked at 0x60
@@ -64,6 +66,10 @@ constexpr uint32_t kLockoutFrames = 20;
 
 bool is_road_tile(int tile) {
     return tile == kRoadTileId || tile == kRoadStripeTileId;
+}
+
+bool is_water_tile(int tile) {
+    return tile == kWaterTileId;
 }
 
 // the grid: 10 columns of 16 px, the chick's cell inset 4 px inside its own
@@ -153,9 +159,23 @@ int chick_col(const Chick& c) {
     return (c.x - kCellInset) / kCellPx;
 }
 
+// chick_at reports the leftmost lit pixel, one in from the 8 px sprite's left edge
+constexpr int kChickLitInset = 3;
+
+double chick_center(const Chick& c) {
+    return c.x + kChickLitInset;
+}
+
+// the grid cell the chick's center sits in; a ride leaves it between two columns
+int chick_cell(const Chick& c) {
+    const int cell = (c.x + kChickLitInset) / kCellPx;
+    return cell < 0 ? 0 : (cell >= kGridCols ? kGridCols - 1 : cell);
+}
+
 // the bg tile of the grid cell k lanes ahead of the chick, in grid column gcol
 int cell_tile(const gb::Gameboy& gameboy, const Chick& c, int k, int gcol) {
-    const int row = (c.y - kCellInset) / 8 - 2 * k;
+    // the chick sits higher in a water lane, so its lane is read off the 16 px band, not its inset
+    const int row = (c.y / kCellPx) * 2 - 2 * k;
     for (int dr = 0; dr < 2; ++dr) {
         for (int dc = 0; dc < 2; ++dc) {
             const int v = bg_cell(gameboy, gcol * 2 + dc, row + dr);
@@ -169,6 +189,12 @@ int cell_tile(const gb::Gameboy& gameboy, const Chick& c, int k, int gcol) {
 
 bool cell_blocked(const gb::Gameboy& gameboy, const Chick& c, int k, int gcol) {
     return cell_tile(gameboy, c, k, gcol) == kTreeTileId;
+}
+
+// water is crossable, but only on a log, so the dry land planner routes around it
+bool cell_impassable(const gb::Gameboy& gameboy, const Chick& c, int k, int gcol) {
+    const int tile = cell_tile(gameboy, c, k, gcol);
+    return tile == kTreeTileId || is_water_tile(tile);
 }
 
 enum Move { kLeft = 0, kRight = 1, kUp = 2, kNoMove = -1 };
@@ -205,7 +231,7 @@ int plan_move(const gb::Gameboy& gameboy, const Chick& c, int lanes) {
                 continue;
             }
             const size_t at = static_cast<size_t>(nk * kGridCols + nc);
-            if (first[at] != kUnseen || cell_blocked(gameboy, c, nk, nc)) {
+            if (first[at] != kUnseen || cell_impassable(gameboy, c, nk, nc)) {
                 continue;
             }
             first[at] = (came == kStart) ? m : came;
@@ -309,43 +335,57 @@ gb::Button button_for(int move) {
     return gb::Button::Up;
 }
 
-// a car is 8 px tall at a 4 px lane inset, so it never crosses a 16 px band edge
+// a mover is 8 px tall at a 4 px lane inset, so it never crosses a 16 px band edge
 struct CarRun {
     int band;
     int x0;
     int x1;
 };
 
-bool is_car_pixel(const gb::Gameboy& gameboy, int x, int y) {
-    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
-    const std::span<const uint8_t> fb = gameboy.framebuffer();
-    const size_t i = static_cast<size_t>(y) * gb::kLcdWidth + static_cast<size_t>(x);
-    const uint8_t tile = static_cast<uint8_t>(ids[i]);
-    return (ids[i] & 0x100u) != 0 && fb[i] != 0 && (tile == kCarFrontTileId || tile == kCarRearTileId);
-}
-
 constexpr int kBands = 9;
 constexpr int kBandPx = 16;
 
-std::vector<CarRun> car_runs(const gb::Gameboy& gameboy) {
+// columns of one sprite family lit in a band; bridge spans the hole a rider punches in a log
+std::vector<CarRun> runs_of(const gb::Gameboy& gameboy, uint8_t lo, uint8_t hi, int bridge) {
+    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
+    const std::span<const uint8_t> fb = gameboy.framebuffer();
     std::vector<CarRun> runs;
     for (int band = 0; band < kBands; ++band) {
         int open = -1;
-        for (int x = 0; x <= static_cast<int>(gb::kLcdWidth); ++x) {
+        int shut = -1;
+        for (int x = 0; x <= static_cast<int>(gb::kLcdWidth) + bridge; ++x) {
             bool lit = false;
             for (int y = band * kBandPx; y < band * kBandPx + kBandPx && !lit; ++y) {
-                lit = x < static_cast<int>(gb::kLcdWidth) && is_car_pixel(gameboy, x, y);
+                if (x >= static_cast<int>(gb::kLcdWidth)) {
+                    break;
+                }
+                const size_t i = static_cast<size_t>(y) * gb::kLcdWidth + static_cast<size_t>(x);
+                const uint8_t tile = static_cast<uint8_t>(ids[i]);
+                lit = (ids[i] & 0x100u) != 0 && fb[i] != 0 && tile >= lo && tile <= hi;
             }
-            if (lit && open < 0) {
-                open = x;
-            }
-            if (!lit && open >= 0) {
-                runs.push_back(CarRun{band, open, x - 1});
+            if (lit) {
+                if (open < 0) {
+                    open = x;
+                }
+                shut = x;
+            } else if (open >= 0 && x - shut > bridge) {
+                runs.push_back(CarRun{band, open, shut});
                 open = -1;
             }
         }
     }
     return runs;
+}
+
+std::vector<CarRun> car_runs(const gb::Gameboy& gameboy) {
+    return runs_of(gameboy, kCarFrontTileId, kCarRearTileId, 0);
+}
+
+// the chick's opaque pixels are six wide, so eight blank columns bridge a rider's hole
+constexpr int kRiderBridge = 8;
+
+std::vector<CarRun> log_runs(const gb::Gameboy& gameboy) {
+    return runs_of(gameboy, kLogTileId, kLogTileId, kRiderBridge);
 }
 
 // the game centers a car on its oam x, so an unclipped run of 16 gives that number back
@@ -354,6 +394,16 @@ double car_center(const CarRun& run) {
         return run.x1 - 7;
     }
     return run.x0 + 8;
+}
+
+// a log is 24 px centered on its track x; a run clipped at the left edge is read from its right
+constexpr int kLogPx = 24;
+
+double log_center(const CarRun& run) {
+    if (run.x0 == 0 && run.x1 - run.x0 + 1 < kLogPx) {
+        return run.x1 - (kLogPx / 2 - 1);
+    }
+    return run.x0 + kLogPx / 2;
 }
 
 // the two cars of a lane sit half a track apart, so one number describes the lane
@@ -376,6 +426,16 @@ double lane_phase(const gb::Gameboy& gameboy, int band) {
     for (const CarRun& run : car_runs(gameboy)) {
         if (run.band == band) {
             return std::fmod(car_center(run), kCarPeriod);
+        }
+    }
+    return kNoPhase;
+}
+
+// the two logs of a lane sit half a track apart too, so either one gives the same phase
+double log_phase(const gb::Gameboy& gameboy, int band) {
+    for (const CarRun& run : log_runs(gameboy)) {
+        if (run.band == band) {
+            return std::fmod(log_center(run), kCarPeriod);
         }
     }
     return kNoPhase;
@@ -490,7 +550,7 @@ int sidestep_move(const gb::Gameboy& gameboy, const Chick& c, int gcol, int n) {
         for (int s = 0; s < 2; ++s) {
             const int j = s == 0 ? gcol - d : gcol + d;
             const int step = j > gcol ? 1 : -1;
-            bool clear = j >= 0 && j < kGridCols && !cell_blocked(gameboy, c, n + 1, j);
+            bool clear = j >= 0 && j < kGridCols && !cell_impassable(gameboy, c, n + 1, j);
             for (int t = gcol + step; clear && t != j + step; t += step) {
                 clear = !cell_blocked(gameboy, c, 0, t);
             }
@@ -506,7 +566,8 @@ int sidestep_move(const gb::Gameboy& gameboy, const Chick& c, int gcol, int n) {
 bool shuffle_column(gb::Gameboy& gameboy, const Chick& c, int gcol, int n) {
     for (int s = 0; s < 2; ++s) {
         const int j = s == 0 ? gcol + 1 : gcol - 1;
-        if (j < 0 || j >= kGridCols || cell_blocked(gameboy, c, 0, j) || cell_blocked(gameboy, c, n + 1, j)) {
+        if (j < 0 || j >= kGridCols || cell_blocked(gameboy, c, 0, j) ||
+            cell_impassable(gameboy, c, n + 1, j)) {
             continue;
         }
         tap(gameboy, j > gcol ? gb::Button::Right : gb::Button::Left);
@@ -515,15 +576,166 @@ bool shuffle_column(gb::Gameboy& gameboy, const Chick& c, int gcol, int n) {
     return false;
 }
 
-// one autopilot action: a plain hop, a sidestep, or a whole road chunk crossed at once
+// logs are slower than cars, so a longer baseline keeps the sampled speed on a whole 32nd
+constexpr uint32_t kLogMeasureFrames = 24;
+// the hop commits on the tap's first frame and its slide lands eight frames later
+constexpr double kHopArrivalFrames = 9.0;
+// the game rides within 12 px of a log center; the plan hops with six of those to spare
+constexpr double kRideCatchPx = 12.0;
+constexpr double kRideMargin = 6.0;
+// the game kills a ride that reaches these, so a landing must leave room downstream of it
+constexpr double kRideLeftEdge = 4.0;
+constexpr double kRideRightEdge = 156.0;
+constexpr double kLandRoom = 60.0;
+// past these the ride is nearly over, so the chick gives up and heads back
+constexpr double kBailLo = 20.0;
+constexpr double kBailHi = 140.0;
+// the boarding column: upstream of the drift, so the whole screen is left to ride across
+constexpr int kBoardColLeft = 3;
+constexpr int kBoardColRight = 6;
+// one log passes a fixed x every 128/speed frames, so a wait is at most a few hundred
+constexpr int kRideAttempts = 800;
+constexpr int kRetreatAttempts = 400;
+
+// two samples of the lane give its logs their shared speed, in whole 32nds of a pixel
+bool measure_logs(gb::Gameboy& gameboy, int band, double& v) {
+    const double before = log_phase(gameboy, band);
+    if (before == kNoPhase) {
+        return false;
+    }
+    run(gameboy, kLogMeasureFrames);
+    const double after = log_phase(gameboy, band);
+    if (after == kNoPhase) {
+        return false;
+    }
+    v = std::round(phase_delta(after, before) / kLogMeasureFrames * 32.0) / 32.0;
+    return v != 0.0;
+}
+
+// water needs room to drift, so the chick lines up in a middle column before it boards
+void approach_column(gb::Gameboy& gameboy, int want) {
+    for (int guard = 0; guard < kGridCols; ++guard) {
+        const Chick c = chick_at(gameboy);
+        if (!c.found) {
+            return;
+        }
+        const int gcol = chick_cell(c);
+        if (gcol == want) {
+            return;
+        }
+        const int step = want > gcol ? 1 : -1;
+        if (cell_blocked(gameboy, c, 0, gcol + step)) {
+            return;
+        }
+        tap(gameboy, step > 0 ? gb::Button::Right : gb::Button::Left);
+    }
+}
+
+// contiguous water lanes ahead of the chick, counted from the next lane up
+int water_chunk_ahead(const gb::Gameboy& gameboy, const Chick& c) {
+    int n = 0;
+    while (n < 3 && is_water_tile(cell_tile(gameboy, c, n + 1, 0))) {
+        ++n;
+    }
+    return n;
+}
+
+// one lane forward (dk 1) or back (dk -1), taken as soon as the landing is a clear column or a log
+bool hop_lane(gb::Gameboy& gameboy, int dk, double v, int budget) {
+    const Chick from = chick_at(gameboy);
+    if (!from.found) {
+        return false;
+    }
+    // the landing lands within a log's width of the chick, so its own column caps the ride's room
+    const double reach = v > 0 ? kRideRightEdge - chick_center(from) : chick_center(from) - kRideLeftEdge;
+    const double need = std::min(kLandRoom, reach - kRideCatchPx);
+
+    for (int attempt = 0; attempt < budget; ++attempt) {
+        const Chick c = chick_at(gameboy);
+        if (!c.found) {
+            return false;
+        }
+        const int gcol = chick_cell(c);
+        const double cx = chick_center(c);
+        bool go = !is_water_tile(cell_tile(gameboy, c, dk, gcol)) && !cell_blocked(gameboy, c, dk, gcol);
+        // log motion is linear, so one speed and one sighting place it at the hop's arrival
+        for (const CarRun& log : log_runs(gameboy)) {
+            if (go || log.band != chick_band(c) - dk) {
+                continue;
+            }
+            const double at = log_center(log) + v * kHopArrivalFrames;
+            // and the landing must leave room downstream, or the ride ends at the screen edge
+            const double room = v > 0 ? kRideRightEdge - at : at - kRideLeftEdge;
+            go = std::fabs(at - cx) <= kRideCatchPx - kRideMargin && room >= need;
+        }
+        if (go) {
+            tap(gameboy, dk > 0 ? gb::Button::Up : gb::Button::Down);
+            return true;
+        }
+        if (is_water_tile(cell_tile(gameboy, c, 0, gcol)) && (cx < kBailLo || cx > kBailHi)) {
+            return false;
+        }
+        gameboy.run_frame();
+    }
+    return false;
+}
+
+// crosses a whole water chunk: every speed read from the bank, then one log at a time
+bool water_cross(gb::Gameboy& gameboy) {
+    const Chick start = chick_at(gameboy);
+    if (!start.found) {
+        return false;
+    }
+    // a failed exit can leave the chick afloat, with no measurement to hand
+    if (is_water_tile(cell_tile(gameboy, start, 0, chick_cell(start)))) {
+        double afloat_v = 0;
+        if (!is_water_tile(cell_tile(gameboy, start, 1, chick_cell(start)))) {
+            return hop_lane(gameboy, 1, 0, kRideAttempts);
+        }
+        return measure_logs(gameboy, chick_band(start) - 1, afloat_v) &&
+               hop_lane(gameboy, 1, afloat_v, kRideAttempts);
+    }
+
+    const int n = water_chunk_ahead(gameboy, start);
+    std::vector<double> v;
+    for (int k = 0; k < n; ++k) {
+        double lane_v = 0;
+        // measured from the bank, where a long baseline costs the chick nothing
+        if (!measure_logs(gameboy, chick_band(start) - 1 - k, lane_v)) {
+            return false;
+        }
+        v.push_back(lane_v);
+    }
+    if (v.empty()) {
+        return false;
+    }
+    approach_column(gameboy, v.front() > 0 ? kBoardColLeft : kBoardColRight);
+
+    for (int k = 0; k < n; ++k) {
+        if (hop_lane(gameboy, 1, v[static_cast<size_t>(k)], kRideAttempts)) {
+            continue;
+        }
+        // carried too far with nothing lined up: back to the bank, log by log, and start over
+        for (int back = k; back > 0; --back) {
+            if (!hop_lane(gameboy, -1, back > 1 ? v[static_cast<size_t>(back - 2)] : 0.0, kRetreatAttempts)) {
+                return false;
+            }
+        }
+        return k > 0;
+    }
+    // dry land ahead, so the exit only waits on a column clear of trees
+    return hop_lane(gameboy, 1, 0, kRideAttempts);
+}
+
+// one autopilot action: a plain hop, a sidestep, a road chunk crossed at once, or a river ridden
 bool autopilot_step(gb::Gameboy& gameboy) {
     const Chick c = chick_at(gameboy);
     if (!c.found) {
         return false;
     }
-    const int gcol = chick_col(c);
-    if (gcol < 0 || gcol >= kGridCols) {
-        return false;
+    const int gcol = chick_cell(c);
+    if (is_water_tile(cell_tile(gameboy, c, 0, gcol)) || is_water_tile(cell_tile(gameboy, c, 1, gcol))) {
+        return water_cross(gameboy);
     }
     const int n = road_chunk_ahead(gameboy, c, gcol);
     if (n == 0) {
@@ -562,12 +774,42 @@ int autopilot(gb::Gameboy& gameboy, int target, int steps) {
     return hud_score(gameboy);
 }
 
+// autopilots up to the bank, then catches the first log that comes by and stops there
+bool board_a_log(gb::Gameboy& gameboy, int steps) {
+    for (int i = 0; i < steps; ++i) {
+        const Chick c = chick_at(gameboy);
+        if (!c.found) {
+            return false;
+        }
+        if (is_water_tile(cell_tile(gameboy, c, 0, chick_cell(c)))) {
+            return true;
+        }
+        if (!is_water_tile(cell_tile(gameboy, c, 1, chick_cell(c)))) {
+            if (!autopilot_step(gameboy)) {
+                return false;
+            }
+            continue;
+        }
+        // water_cross would carry straight on over the whole chunk, so board by hand
+        double v = 0;
+        if (!measure_logs(gameboy, chick_band(c) - 1, v)) {
+            return false;
+        }
+        approach_column(gameboy, v > 0 ? kBoardColLeft : kBoardColRight);
+        if (!hop_lane(gameboy, 1, v, kRideAttempts)) {
+            return false;
+        }
+    }
+    return false;
+}
+
 // every cell of the play area, minus the ones a sprite fully covers
 bool play_area_is_all_terrain(const gb::Gameboy& gameboy) {
     for (int cy = 0; cy < 18; ++cy) {
         for (int cx = 0; cx < 20; ++cx) {
             const int tile = bg_cell(gameboy, cx, cy);
-            if (tile != kNoTile && tile != kGrassTileId && tile != kTreeTileId && !is_road_tile(tile)) {
+            if (tile != kNoTile && tile != kGrassTileId && tile != kTreeTileId && !is_road_tile(tile) &&
+                !is_water_tile(tile)) {
                 return false;
             }
         }
@@ -857,11 +1099,8 @@ TEST_CASE("crossy_tree_blocks_the_hop") {
         if (tested) {
             break;
         }
-        const int move = plan_move(gameboy, c, 7);
-        if (move == kNoMove) {
-            break;
-        }
-        tap(gameboy, button_for(move));
+        // the full autopilot, so a river between here and the next tree is no obstacle
+        REQUIRE(autopilot_step(gameboy));
     }
     REQUIRE(tested);
 }
@@ -936,11 +1175,14 @@ TEST_CASE("roads_appear_and_read_distinct") {
     REQUIRE(bg_has_tile(gameboy, kRoadStripeTileId));
 }
 
+// the seed that opens with a road chunk; the default one opens with water
+constexpr uint32_t kRoadSeedExtra = 6;
+
 TEST_CASE("cars_move_and_keep_their_gap") {
     const std::vector<uint8_t> rom = read_crossy_rom();
 
     gb::Gameboy gameboy;
-    start_play(gameboy, rom);
+    start_play(gameboy, rom, kRoadSeedExtra);
 
     std::vector<CarRun> runs = car_runs(gameboy);
     REQUIRE_FALSE(runs.empty());
@@ -1023,7 +1265,7 @@ TEST_CASE("popup_is_centered_and_solid") {
         for (size_t x = 0; x < gb::kLcdWidth; ++x) {
             const uint16_t id = ids[y * gb::kLcdWidth + x];
             const uint8_t tile = static_cast<uint8_t>(id);
-            if ((id & 0x100u) != 0 || tile < kGrassTileId || tile > kRoadStripeTileId) {
+            if ((id & 0x100u) != 0 || tile < kGrassTileId || tile > kWaterTileId) {
                 continue;
             }
             above = above || y < kPopupTopPx;
@@ -1115,14 +1357,216 @@ TEST_CASE("retry_flow") {
 TEST_CASE("autopilot_crosses_roads") {
     const std::vector<uint8_t> rom = read_crossy_rom();
 
-    // a handful of fixed seeds: still deterministic, but not one lucky world
-    for (uint32_t hover_extra : {0u, 1u, 2u, 5u, 11u, 17u, 23u, 31u}) {
+    // a handful of fixed seeds whose first danger chunk is a road: not one lucky world
+    for (uint32_t hover_extra : {6u, 7u, 8u, 9u, 12u, 23u, 24u, 30u}) {
         gb::Gameboy gameboy;
         start_play(gameboy, rom, hover_extra);
 
         const int reached = autopilot(gameboy, 13, 60);
         REQUIRE(reached >= 12);
         // the whole mixed run happened without a scratch
+        REQUIRE(chick_at(gameboy).found);
+        REQUIRE_FALSE(popup_shown(gameboy));
+        REQUIRE(play_area_is_all_terrain(gameboy));
+    }
+}
+
+TEST_CASE("water_appears_and_reads_distinct") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+
+    bool found = false;
+    for (int step = 0; step < 30 && !found; ++step) {
+        const Chick c = chick_at(gameboy);
+        REQUIRE(c.found);
+        for (int k = 0; k <= 6 && !found; ++k) {
+            int water_cells = 0;
+            int tree_cells = 0;
+            for (int col = 0; col < kGridCols; ++col) {
+                const int tile = cell_tile(gameboy, c, k, col);
+                water_cells += is_water_tile(tile) ? 1 : 0;
+                tree_cells += tile == kTreeTileId ? 1 : 0;
+            }
+            if (water_cells == 0) {
+                continue;
+            }
+            // a water lane is open water end to end: never a tree, never a patch of bank
+            REQUIRE(water_cells == kGridCols);
+            REQUIRE(tree_cells == 0);
+            found = true;
+        }
+        if (!found) {
+            REQUIRE(autopilot_step(gameboy));
+        }
+    }
+    REQUIRE(found);
+    REQUIRE(bg_has_tile(gameboy, kWaterTileId));
+}
+
+TEST_CASE("logs_move_and_keep_their_gap") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+
+    const std::vector<CarRun> runs = log_runs(gameboy);
+    REQUIRE_FALSE(runs.empty());
+    const int band = runs.front().band;
+
+    double phase = log_phase(gameboy, band);
+    REQUIRE(phase != kNoPhase);
+    double travelled = 0;
+    int sign = 0;
+    for (uint32_t frame = 0; frame < 120; ++frame) {
+        gameboy.run_frame();
+        const double now = log_phase(gameboy, band);
+        REQUIRE(now != kNoPhase);
+        const double step = phase_delta(now, phase);
+        // 8.8 fixed point at under a pixel a frame, so a step is never a jump
+        REQUIRE(std::fabs(step) <= 1.0);
+        if (step != 0) {
+            if (sign == 0) {
+                sign = step > 0 ? 1 : -1;
+            }
+            REQUIRE((step > 0 ? 1 : -1) == sign);
+        }
+        travelled += step;
+        phase = now;
+
+        // the two logs share the lane's speed, so their gap can never close
+        std::vector<double> centers;
+        for (const CarRun& log : log_runs(gameboy)) {
+            if (log.band == band) {
+                centers.push_back(log_center(log));
+            }
+        }
+        for (size_t i = 1; i < centers.size(); ++i) {
+            for (size_t j = 0; j < i; ++j) {
+                REQUIRE(std::fabs(centers[i] - centers[j]) >= 40.0);
+            }
+        }
+    }
+    REQUIRE(std::fabs(travelled) >= 40.0);
+}
+
+TEST_CASE("riding_carries_the_chick") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    REQUIRE(board_a_log(gameboy, 24));
+
+    Chick c = chick_at(gameboy);
+    REQUIRE(c.found);
+    const int band = chick_band(c);
+    const int from = c.x;
+    int dir = 0;
+    int prev = c.x;
+    for (uint32_t frame = 0; frame < 30; ++frame) {
+        gameboy.run_frame();
+        c = chick_at(gameboy);
+        REQUIRE(c.found);
+        const int step = c.x - prev;
+        if (step != 0) {
+            // under a pixel a frame, and never once against the log
+            REQUIRE(std::abs(step) <= 1);
+            if (dir == 0) {
+                dir = step > 0 ? 1 : -1;
+            }
+            REQUIRE((step > 0 ? 1 : -1) == dir);
+        }
+        prev = c.x;
+
+        double nearest = 999;
+        for (const CarRun& log : log_runs(gameboy)) {
+            if (log.band == band) {
+                nearest = std::min(nearest, std::fabs(log_center(log) - (chick_center(c))));
+            }
+        }
+        REQUIRE(nearest <= kRideCatchPx);
+    }
+    REQUIRE(dir != 0);
+    // the slowest log still covers twelve px in thirty frames
+    REQUIRE(std::abs(prev - from) >= 8);
+}
+
+// no log can drift back under the chick from this far off before the hop lands
+constexpr double kOpenWaterPx = 40.0;
+
+TEST_CASE("hopping_into_water_drowns") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+
+    bool at_bank = false;
+    for (int step = 0; step < 24 && !at_bank; ++step) {
+        const Chick c = chick_at(gameboy);
+        REQUIRE(c.found);
+        if (is_water_tile(cell_tile(gameboy, c, 1, chick_cell(c)))) {
+            at_bank = true;
+            break;
+        }
+        REQUIRE(autopilot_step(gameboy));
+    }
+    REQUIRE(at_bank);
+
+    const int band = chick_band(chick_at(gameboy)) - 1;
+    bool jumped = false;
+    for (int attempt = 0; attempt < kRideAttempts && !jumped; ++attempt) {
+        const Chick c = chick_at(gameboy);
+        REQUIRE(c.found);
+        double nearest = 999;
+        for (const CarRun& log : log_runs(gameboy)) {
+            if (log.band == band) {
+                nearest = std::min(nearest, std::fabs(log_center(log) - (chick_center(c))));
+            }
+        }
+        if (nearest >= kOpenWaterPx) {
+            tap(gameboy, gb::Button::Up);
+            jumped = true;
+            break;
+        }
+        gameboy.run_frame();
+    }
+    REQUIRE(jumped);
+
+    run(gameboy, 6);
+    REQUIRE(popup_shown(gameboy));
+    REQUIRE_FALSE(chick_at(gameboy).found);
+}
+
+TEST_CASE("riding_off_the_edge_kills") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    REQUIRE(board_a_log(gameboy, 24));
+
+    // the slowest log needs three hundred odd frames to carry the chick the width of the screen
+    bool killed = false;
+    for (uint32_t frame = 0; frame < 900 && !killed; ++frame) {
+        gameboy.run_frame();
+        killed = popup_shown(gameboy);
+    }
+    REQUIRE(killed);
+    run(gameboy, 6);
+    REQUIRE_FALSE(chick_at(gameboy).found);
+    REQUIRE(log_runs(gameboy).empty());
+}
+
+TEST_CASE("autopilot_crosses_rivers") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    // fixed seeds whose first danger chunk is water, so every run is a mixed crossing
+    for (uint32_t hover_extra : {0u, 2u, 4u, 14u, 20u, 34u}) {
+        gb::Gameboy gameboy;
+        start_play(gameboy, rom, hover_extra);
+
+        const int reached = autopilot(gameboy, 15, 80);
+        REQUIRE(reached >= 14);
         REQUIRE(chick_at(gameboy).found);
         REQUIRE_FALSE(popup_shown(gameboy));
         REQUIRE(play_area_is_all_terrain(gameboy));
