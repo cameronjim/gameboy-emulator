@@ -24,6 +24,9 @@ static uint8_t lane_dash[kRingLanes];
 static uint8_t track_phase[kRingLanes];
 static uint16_t track_timer[kRingLanes];
 static int16_t train_x[kRingLanes];
+// the leftmost column the head has already turned into train body, and the tail into rails again
+static uint8_t train_body_col[kRingLanes];
+static uint8_t train_clear_col[kRingLanes];
 // the warning cell's current art, so vram is written only on a blink
 static uint8_t warn_shown[kRingLanes];
 // lanes come out in chunks; these carry the run of the chunk being generated
@@ -99,6 +102,8 @@ static void track_init(uint8_t slot) {
     track_phase[slot] = kTrackQuiet;
     track_timer[slot] = quiet_frames();
     train_x[slot] = kTrainOffX;
+    train_body_col[slot] = kTrainColIdle;
+    train_clear_col[slot] = kTrainColIdle;
     warn_shown[slot] = kRailWarnTileId;
 }
 
@@ -233,6 +238,7 @@ void terrain_init(uint8_t seed) {
 
     set_bkg_data(kRailTileId, 1, kRailTile);
     set_bkg_data(kRailWarnTileId, 1, kRailWarnTile);
+    set_bkg_data(kTrainBodyUpperTileId, 2, kTrainBodyTiles);
 
     for (i = 0; i < kRingLanes; ++i) {
         lane_trees[i] = 0;
@@ -241,6 +247,8 @@ void terrain_init(uint8_t seed) {
         track_phase[i] = kTrackQuiet;
         track_timer[i] = kTrackQuietMin;
         train_x[i] = kTrainOffX;
+        train_body_col[i] = kTrainColIdle;
+        train_clear_col[i] = kTrainColIdle;
         warn_shown[i] = kRailWarnTileId;
     }
 
@@ -291,7 +299,8 @@ uint8_t terrain_train_hit(uint16_t lane, uint8_t center_x) {
         return 0;
     }
     d = (int16_t)((int16_t)center_x - x);
-    return (d > -(int16_t)kChickHalfPx && d < (int16_t)(kTrainPx + kChickHalfPx)) ? 1U : 0U;
+    // the body is bg, not sprites, so the whole span is pure state math either way
+    return (d > -(int16_t)kChickHalfPx && d < (int16_t)(kTrainSpanPx + kChickHalfPx)) ? 1U : 0U;
 }
 
 // the light holds its crossbuck except on the blink's off half; only a warning ever shows bare rail
@@ -303,6 +312,46 @@ static uint8_t warn_art(uint8_t slot) {
     }
     elapsed = (uint8_t)(kTrackWarnFrames - track_timer[slot]);
     return ((uint8_t)(elapsed / kTrackBlinkFrames) & 1U) != 0U ? kRailTileId : kRailWarnTileId;
+}
+
+// one 8 px column of a track lane: train carriage, or the lane's own rails and light back again
+static void write_column(uint16_t lane, uint8_t col, uint8_t body) {
+    uint8_t slot = (uint8_t)(lane & kRingLaneMask);
+    uint8_t pair[2];
+
+    if (body != 0U) {
+        pair[0] = kTrainBodyUpperTileId;
+        pair[1] = kTrainBodyLowerTileId;
+    } else {
+        pair[0] = col == kTrackWarnCol ? warn_shown[slot] : kRailTileId;
+        pair[1] = kRailTileId;
+    }
+    set_bkg_tiles(col, ring_row(lane), 1, 2, pair);
+}
+
+// the head lays carriages down behind it and the tail lifts them; at 5 px a frame an edge
+// crosses a column every 1.6 frames, so one lane costs at most two columns, four tiles, a vblank
+static void sweep_columns(uint16_t lane, uint8_t slot) {
+    int16_t head = (int16_t)(train_x[slot] + kTrainHeadPx);
+    int16_t back = (int16_t)(train_x[slot] + kTrainSpanPx);
+    int16_t edge;
+
+    while (train_body_col[slot] != 0U) {
+        edge = (int16_t)((int16_t)((int16_t)train_body_col[slot] - 1) << 3);
+        if (edge < head) {
+            break;
+        }
+        --train_body_col[slot];
+        write_column(lane, train_body_col[slot], 1U);
+    }
+    while (train_clear_col[slot] != 0U) {
+        edge = (int16_t)((int16_t)((int16_t)train_clear_col[slot] - 1) << 3);
+        if (edge < back) {
+            break;
+        }
+        --train_clear_col[slot];
+        write_column(lane, train_clear_col[slot], 0U);
+    }
 }
 
 // one lane's frame of the quiet -> warning -> train loop; reads 1 on the frames a bell is due
@@ -329,10 +378,14 @@ static uint8_t tick_track(uint16_t lane) {
         }
     } else {
         train_x[slot] = (int16_t)(train_x[slot] - kTrainSpeedPx);
-        if (train_x[slot] <= -(int16_t)kTrainPx) {
+        sweep_columns(lane, slot);
+        // the tail clears column 0 on the very step that ends the sweep, so no carriage is left behind
+        if (train_x[slot] <= -(int16_t)kTrainSpanPx) {
             track_phase[slot] = kTrackQuiet;
             track_timer[slot] = quiet_frames();
             train_x[slot] = kTrainOffX;
+            train_body_col[slot] = kTrainColIdle;
+            train_clear_col[slot] = kTrainColIdle;
         }
     }
 
@@ -365,9 +418,30 @@ uint16_t terrain_cam_lane(void) {
     return cam_lane;
 }
 
+// a lane leaving the tick window stops mid sweep, so its carriages are lifted here in one go
+// no rng is drawn: a pinned world's lane sequence must never depend on where the camera was
+static void abandon_track(uint16_t lane) {
+    uint8_t slot = (uint8_t)(lane & kRingLaneMask);
+
+    if (lane_kind[slot] != kLaneTrack || track_phase[slot] != kTrackTrain) {
+        return;
+    }
+    track_phase[slot] = kTrackQuiet;
+    track_timer[slot] = kTrackQuietMin;
+    train_x[slot] = kTrainOffX;
+    train_body_col[slot] = kTrainColIdle;
+    train_clear_col[slot] = kTrainColIdle;
+    // the lane is still on screen through the slide, so its rails go back the same frame
+    draw_lane(lane);
+}
+
 void terrain_advance(void) {
     ++cam_lane;
     creep_frames = 0;
+    // only ever on the rare frame a sweeping track falls out of the window: 40 tiles beside the stream
+    if (cam_lane > kMaxLanesBehind) {
+        abandon_track((uint16_t)(cam_lane - kMaxLanesBehind - 1U));
+    }
     // the new lane sits one row above the top edge until scy slides, so it is safe to write
     generate_lane(gen_next);
     draw_lane(gen_next);

@@ -23,8 +23,9 @@ static uint8_t rng_next(void) {
     return rng_state;
 }
 
-// the train's tile per sprite: nose, carriage, carriage, carriage, carriage, tail
-static const uint8_t kTrainOrder[kTrainSprites] = {0U, 1U, 2U, 1U, 2U, 3U};
+// the train's ends, in tile pairs: nose then two cabs then a carriage, and a carriage then the rear
+static const uint8_t kTrainHeadOrder[kTrainHeadSprites] = {0U, 1U, 1U, 2U};
+static const uint8_t kTrainTailOrder[kTrainTailSprites] = {2U, 3U};
 
 // the 8.8 track position of one of a lane's two movers
 static uint16_t track_pos(uint8_t slot, uint8_t which, uint8_t water) {
@@ -86,23 +87,32 @@ static uint8_t draw_mover(uint8_t sprite, uint8_t tx, uint8_t y, uint8_t water) 
     return sprite;
 }
 
-// the train is one solid 48 px block; the pool lends it six slots, as a water lane's two logs do
-static uint8_t draw_train(uint8_t sprite, uint16_t lane) {
-    int16_t x = terrain_train_x(lane);
-    uint8_t y = (uint8_t)(terrain_lane_screen_y(lane) + kOamYOffset);
+// one end of the train: a row of 8x16 sprites from x, parked whole once it leaves the screen
+static uint8_t draw_block(uint8_t sprite, int16_t x, uint8_t y, const uint8_t* order, uint8_t parts) {
     uint8_t i;
 
-    for (i = 0; i < kTrainSprites; ++i) {
+    for (i = 0; i < parts; ++i) {
         if (x <= -(int16_t)kSpritePx || x >= (int16_t)kScreenWidthPx) {
             park(sprite);
         } else {
-            set_sprite_tile(sprite, (uint8_t)(kTrainTileId + (uint8_t)(kTrainOrder[i] * kTilesPerSprite)));
+            set_sprite_tile(sprite, (uint8_t)(kTrainTileId + (uint8_t)(order[i] * kTilesPerSprite)));
             move_sprite(sprite, (uint8_t)(x + kOamXOffset), y);
         }
         x = (int16_t)(x + kSpritePx);
         ++sprite;
     }
     return sprite;
+}
+
+// only the train's ends are oam; terrain owns the carriages between them, as bg tiles
+// the pool lends the pair six slots, exactly what a water lane's two logs take
+static uint8_t draw_train(uint8_t sprite, uint16_t lane) {
+    int16_t x = terrain_train_x(lane);
+    uint8_t y = (uint8_t)(terrain_lane_screen_y(lane) + kOamYOffset);
+
+    sprite = draw_block(sprite, x, y, kTrainHeadOrder, kTrainHeadSprites);
+    return draw_block(sprite, (int16_t)(x + (int16_t)(kTrainSpanPx - kTrainTailPx)), y, kTrainTailOrder,
+                      kTrainTailSprites);
 }
 
 void movers_init(uint8_t seed) {
