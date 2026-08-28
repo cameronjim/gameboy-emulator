@@ -116,8 +116,9 @@ inline constexpr Palette4 kCrossyLog = {kBlack, 0xFF3F2611u, 0xFF9A6534u, 0xFFC0
 // the train's windows are its shade 3, so they light up warm against the slate
 inline constexpr Palette4 kCrossyTrain = {kBlack, 0xFF1E242Fu, 0xFF5A6473u, 0xFFFFD34Au};
 inline constexpr Palette4 kCrossyEagle = {kBlack, 0xFF4A3018u, 0xFFF2EAD8u, 0xFFE0A032u};
-// a near black outline round a white body, so the chick reads on grass, asphalt and bark alike
-inline constexpr Palette4 kCrossyChick = {kBlack, 0xFF2A1A08u, kWhite, 0xFFFF9A12u};
+// a near black outline round a warm yellow body, so the chick reads on grass, water, asphalt and bark
+// its eye is the outline shade and its beak, feet and wing the orange one
+inline constexpr Palette4 kCrossyChick = {kBlack, 0xFF2A1A08u, 0xFFF7D14Au, 0xFFFF7A10u};
 
 // id: low byte tile index, bit 8 sprite. crossy's bg and sprite tiles occupy
 // disjoint pinned ranges, so the tile index alone picks the palette.
@@ -143,6 +144,10 @@ inline uint32_t colorize_crossy(uint16_t id, uint8_t shade) {
         return kCrossyGrassAlt[s];
     case 0xA8:
         return kCrossyWaterDark[s];
+    // the train's carriages are bg tiles, so they take the same palette its head and tail wear
+    case 0xA9:
+    case 0xAA:
+        return kCrossyTrain[s];
     default:
         break;
     }

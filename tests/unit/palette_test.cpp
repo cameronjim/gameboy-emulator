@@ -153,22 +153,39 @@ TEST_CASE("colorize_crossy_movers_wear_their_own_colors") {
     // the train's windows are its shade 3, so they light up warm
     const uint32_t window = colorize_crossy(0x1C0, 3);
     REQUIRE(red_of(window) > blue_of(window) + 0x60u);
+    // the carriages between head and tail are bg tiles, and must not read as a different train
+    for (uint8_t shade = 0; shade < 4; ++shade) {
+        REQUIRE(colorize_crossy(0xA9, shade) == colorize_crossy(0x1C0, shade));
+        REQUIRE(colorize_crossy(0xAA, shade) == colorize_crossy(0x1C0, shade));
+    }
 }
 
 TEST_CASE("colorize_crossy_chick_pops_against_every_lane") {
-    // the visibility guarantee: no chick shade collides with a lane's own color
-    constexpr std::array<uint16_t, 9> kLaneTiles = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8};
+    // the visibility guarantee: no chick shade collides with a lane's own color, carriages included
+    constexpr std::array<uint16_t, 11> kLaneTiles = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5,
+                                                     0xA6, 0xA7, 0xA8, 0xA9, 0xAA};
     for (uint8_t shade = 1; shade < 4; ++shade) {
         const uint32_t chick = colorize_crossy(0x1E0, shade);
         for (const uint16_t tile : kLaneTiles) {
             REQUIRE(chick != colorize_crossy(tile, shade));
         }
     }
-    // body white, accents warm
-    REQUIRE(colorize_crossy(0x1E0, 2) == kWhite);
+    // a warm yellow body: no snowman, and never as pale as the log crown or the rail ballast
+    const uint32_t body = colorize_crossy(0x1E0, 2);
+    REQUIRE(red_of(body) > green_of(body));
+    REQUIRE(green_of(body) > blue_of(body) + 0x40u);
+    REQUIRE(red_of(body) > 0xE0u);
+    REQUIRE(blue_of(body) < 0x80u);
+    // beak, feet and wing are a deeper orange than the body, so they read as their own parts
     const uint32_t accent = colorize_crossy(0x1E1, 3);
     REQUIRE(red_of(accent) > green_of(accent));
     REQUIRE(green_of(accent) > blue_of(accent));
+    REQUIRE(green_of(accent) + 0x40u < green_of(body));
+    // and the outline stays near black against every one of them
+    const uint32_t outline = colorize_crossy(0x1E0, 1);
+    REQUIRE(red_of(outline) < 0x40u);
+    REQUIRE(green_of(outline) < 0x40u);
+    REQUIRE(blue_of(outline) < 0x40u);
 }
 
 TEST_CASE("colorize_crossy_digits_and_font_stay_gray") {

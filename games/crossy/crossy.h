@@ -28,6 +28,9 @@
 #define kGrassAltTileId 0xA7U
 // water follows the same parity rule: one tile fills a whole lane, so a boundary is a shade step
 #define kWaterDarkTileId 0xA8U
+// the train's middle is bg, not sprites: one carriage over a track lane's two tile rows
+#define kTrainBodyUpperTileId 0xA9U
+#define kTrainBodyLowerTileId 0xAAU
 
 // a lane is one of four kinds; the kind is cached per ring slot
 #define kLaneGrass 0U
@@ -68,7 +71,7 @@
 // the chick may trail the camera by two lanes and still be fully on screen
 #define kMaxLanesBehind 2U
 
-// the chick is one 8x16 sprite centered across its 16 px cell; its art is 12 px tall
+// the chick is one 8x16 sprite centered across its 16 px cell; its art is 13 px tall
 #define kChickCellInset 4U
 #define kChickHalfPx 4U
 // two px of grass under the sprite's top edge centers the art in the cell
@@ -143,10 +146,10 @@
 // worst case in nine visible lanes is five water lanes: water chunks cap at 2, grass at 2
 #define kMoverFirstSprite 4U
 #define kMoverSprites 30U
-// 5 water lanes x 6 log parts is the pool exactly, as is 4 water lanes plus one 6 part train
+// 5 water lanes x 6 log parts is the pool exactly, as is 4 water lanes plus one 6 slot train
 // 36 of 40 oam with the eagle; 8x16 changed no count, and a mover still spans only its own lane
-// so a scanline sees at most 6 movers: play's worst line is 6 train + 3 hud digits
-// the swoop hides the digits, leaving 6 train + 2 eagle + 1 chick: still inside the dmg's 10
+// so a scanline sees at most 6 movers: play's worst line is 6 log parts + 3 hud digits
+// the swoop hides the digits, leaving 6 + 2 eagle + 1 chick: still inside the dmg's 10
 
 // cars: 16x16 of two 8x16 sprites, its left half then its right
 #define kCarTileId 0xB0U
@@ -207,17 +210,28 @@
 // the second ding lands halfway through the warning
 #define kTrackBellGap 30U
 
-// the train: six 8x16 sprites of one solid 48x16 block, drawn from four tile pairs
+// the train: 1.6 screens of it, drawn from four tile pairs at 0xc0
 #define kTrainTileId 0xC0U
 #define kTrainTileCount 8U
+// a whole train of sprites is impossible: dmg draws ten a scanline, so only its two ends are oam
+// head 4 plus tail 2 is the same six pool slots a water lane's two logs take, so pool math is unchanged
+// worst window is 4 water lanes (24) plus one track (6) = 30, the pool exactly
+// a scanline sees head 4 or tail 2, plus the 3 hud digits when the track is the top lane: 7 of 10
 #define kTrainSprites 6U
-#define kTrainPx 48
-// 5 px a frame from just off the right edge walks the whole block past the left one in 42 frames
+#define kTrainHeadSprites 4U
+#define kTrainTailSprites 2U
+#define kTrainHeadPx 32
+#define kTrainTailPx 16
+// the whole block, ends included; the 208 px between them are bg tiles
+#define kTrainSpanPx 256
+// 5 px a frame from just off the right edge walks all 416 px of travel past the left one in 84 frames
 #define kTrainSpeedPx 5
 #define kTrainStartX 160
 // a position the sweep never takes, so one value means "no train on this lane"
-#define kTrainOffX 256
+#define kTrainOffX 512
 #define kScreenWidthPx 160
+// both column cursors start past the rightmost column and walk down to zero as the block passes
+#define kTrainColIdle kScreenCols
 
 // the camera advances a lane of its own every four seconds; any hop driven advance restarts it
 #define kCreepFrames 240U
