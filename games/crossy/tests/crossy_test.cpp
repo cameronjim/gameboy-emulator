@@ -370,13 +370,20 @@ struct DigitRun {
     size_t pixels;
 };
 
+// the badge fills its whole cell, so neighbouring digits touch: a run is cut by the tile id
+// changing or by the 8 px pitch running out, never by a blank column between badges
+constexpr int kDigitPitchPx = 8;
+// the badge is the top tile of an 8x16 pair, opaque end to end
+constexpr size_t kDigitBadgePixels = 64;
+
 std::vector<DigitRun> digit_runs(const gb::Gameboy& gameboy, size_t y0, size_t y1) {
     const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
     const std::span<const uint8_t> fb = gameboy.framebuffer();
     std::vector<DigitRun> runs;
-    bool open = false;
+    int open_tile = -1;
     for (size_t x = 0; x < gb::kLcdWidth; ++x) {
         int digit = -1;
+        int glyph = -1;
         size_t pixels = 0;
         for (size_t y = y0; y < y1; ++y) {
             const size_t i = y * gb::kLcdWidth + x;
@@ -385,19 +392,21 @@ std::vector<DigitRun> digit_runs(const gb::Gameboy& gameboy, size_t y0, size_t y
                 continue;
             }
             if (pixels == 0) {
+                glyph = tile;
                 // the glyph badge is the pair's top tile, so a digit is two tiles on from the last
                 digit = (tile - kDigitTileId) / 2;
             }
             ++pixels;
         }
         if (digit < 0) {
-            open = false;
+            open_tile = -1;
             continue;
         }
-        if (!open) {
+        const bool full = !runs.empty() && runs.back().x1 - runs.back().x0 + 1 >= kDigitPitchPx;
+        if (open_tile != glyph || full) {
             runs.push_back(
                 DigitRun{static_cast<uint8_t>(digit), static_cast<int>(x), static_cast<int>(x), 0});
-            open = true;
+            open_tile = glyph;
         }
         runs.back().x1 = static_cast<int>(x);
         runs.back().pixels += pixels;
@@ -427,6 +436,30 @@ int digits_value(const std::vector<DigitRun>& runs) {
 
 int hud_score(const gb::Gameboy& gameboy) {
     return digits_value(hud_digits(gameboy));
+}
+
+// 1 when that screen column carries a digit sprite pixel anywhere in the hud's own band
+bool hud_column_lit(const gb::Gameboy& gameboy, int x) {
+    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
+    const std::span<const uint8_t> fb = gameboy.framebuffer();
+    for (size_t y = 0; y < kBestDigitTopPx; ++y) {
+        const size_t i = y * gb::kLcdWidth + static_cast<size_t>(x);
+        const uint8_t tile = static_cast<uint8_t>(ids[i]);
+        if ((ids[i] & 0x100u) != 0 && fb[i] != 0 && tile >= kDigitTileId && tile <= kDigitLastTileId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// nothing may eat a badge: every drawn digit keeps all 64 px of its cell
+void require_hud_intact(const gb::Gameboy& gameboy, size_t want) {
+    const std::vector<DigitRun> digits = hud_digits(gameboy);
+    REQUIRE(digits.size() == want);
+    for (const DigitRun& digit : digits) {
+        REQUIRE(digit.pixels == kDigitBadgePixels);
+        REQUIRE(digit.x1 - digit.x0 + 1 == kDigitPitchPx);
+    }
 }
 
 void run(gb::Gameboy& gameboy, uint32_t frames) {
@@ -566,6 +599,41 @@ size_t chick_pixels(const gb::Gameboy& gameboy) {
         }
     }
     return lit;
+}
+
+// any car, log or train sprite pixel anywhere inside a 16 px band
+bool band_has_mover_pixels(const gb::Gameboy& gameboy, int band) {
+    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
+    const std::span<const uint8_t> fb = gameboy.framebuffer();
+    for (int y = band * kBandPx; y < band * kBandPx + kBandPx; ++y) {
+        for (int x = 0; x < static_cast<int>(gb::kLcdWidth); ++x) {
+            const size_t i = static_cast<size_t>(y) * gb::kLcdWidth + static_cast<size_t>(x);
+            const uint8_t tile = static_cast<uint8_t>(ids[i]);
+            if ((ids[i] & 0x100u) == 0 || fb[i] == 0) {
+                continue;
+            }
+            if ((tile >= kCarFirstTileId && tile <= kLogLastTileId) ||
+                (tile >= kTrainFirstTileId && tile <= kTrainLastTileId)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// the danger kind a whole band's bg carries, or kNoTile; movers may hide a few of its cells
+int band_danger_kind(const gb::Gameboy& gameboy, int band) {
+    int road = 0;
+    int water = 0;
+    for (int cx = 0; cx < 20; ++cx) {
+        const int tile = bg_cell(gameboy, cx, band * 2);
+        road += is_road_tile(tile) ? 1 : 0;
+        water += is_water_tile(tile) ? 1 : 0;
+    }
+    if (road >= 10) {
+        return kRoadTileId;
+    }
+    return water >= 10 ? kWaterTileId : kNoTile;
 }
 
 // the train is one solid block, but a chick standing on the rails punches the same hole a rider does
@@ -1590,7 +1658,7 @@ TEST_CASE("crossy_title_text_is_centered") {
     }
 }
 
-// the digit badge is 7 of a cell's 8 px, so an odd width run has an exact middle pixel
+// the badge is the whole 8 px cell, so an n digit run is 8n wide and straddles the middle column
 TEST_CASE("best_digits_pixel_centered") {
     const std::vector<uint8_t> rom = read_crossy_rom();
 
@@ -1611,7 +1679,8 @@ TEST_CASE("best_digits_pixel_centered") {
         REQUIRE_FALSE(digits.empty());
         REQUIRE(digits_value(digits) == best);
         // the whole run's lit box, centered on screen x 80 whatever the digit count
-        REQUIRE(digits.front().x0 + digits.back().x1 == static_cast<int>(gb::kLcdWidth));
+        REQUIRE(digits.front().x0 + digits.back().x1 == static_cast<int>(gb::kLcdWidth) - 1);
+        REQUIRE(digits.back().x1 - digits.front().x0 + 1 == static_cast<int>(digits.size()) * kDigitPitchPx);
     }
 }
 
@@ -1865,8 +1934,9 @@ TEST_CASE("crossy_score_counts_furthest_lane") {
     const std::vector<DigitRun> digits = hud_digits(gameboy);
     REQUIRE(digits.size() == 2u);
     for (const DigitRun& digit : digits) {
-        REQUIRE(digit.pixels > 20u);
-        REQUIRE(digit.x1 - digit.x0 >= 5);
+        // an opaque badge over the whole cell: 8 columns of 8 rows, every one of them lit
+        REQUIRE(digit.pixels == kDigitBadgePixels);
+        REQUIRE(digit.x1 - digit.x0 + 1 == kDigitPitchPx);
     }
 
     // the camera never retreats and the score is the furthest lane, so a step back holds it
@@ -3139,4 +3209,87 @@ TEST_CASE("crossy_play_is_deterministic") {
     REQUIRE(a.size() == b.size());
     REQUIRE(std::equal(a.begin(), a.end(), b.begin()));
     REQUIRE(hud_score(first) == hud_score(second));
+}
+
+// the camera creeps a lane of its own after four seconds without one, so a wait advances it by exactly one
+constexpr uint32_t kCreepWatchFrames = 320;
+
+TEST_CASE("top_band_movers_are_hidden") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    for (uint32_t world_wait : {kRoadSeedWait, kTwoWaterWait}) {
+        gb::Gameboy gameboy;
+        enter_world(gameboy, rom, world_wait);
+
+        // walk on until a danger chunk opens in the top band with plain ground still under it
+        bool staged = false;
+        for (int step = 0; step < 40 && !staged; ++step) {
+            staged = world_is_settled(gameboy) && band_danger_kind(gameboy, 0) != kNoTile &&
+                     band_danger_kind(gameboy, 1) == kNoTile;
+            if (!staged && !autopilot_step(gameboy)) {
+                break;
+            }
+        }
+        REQUIRE(staged);
+
+        // the lane is there in full, and nothing rides it: band 0 is the hud's own scanlines
+        const int kind = band_danger_kind(gameboy, 0);
+        REQUIRE_FALSE(band_has_mover_pixels(gameboy, 0));
+
+        // one creep later the same lane sits in band 1, and its movers are back
+        bool crept = false;
+        for (uint32_t frame = 0; frame < kCreepWatchFrames && !crept; ++frame) {
+            gameboy.run_frame();
+            crept = world_is_settled(gameboy) && band_danger_kind(gameboy, 1) == kind;
+        }
+        REQUIRE(crept);
+        REQUIRE(band_has_mover_pixels(gameboy, 1));
+        REQUIRE_FALSE(band_has_mover_pixels(gameboy, 0));
+    }
+}
+
+TEST_CASE("score_never_occluded") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    REQUIRE(autopilot(gameboy, 10, 40) >= 10);
+
+    // a two digit score, watched frame by frame while danger lanes stream through the top band
+    uint32_t watched = 0;
+    uint32_t top_danger = 0;
+    for (int step = 0; step < 40 && !popup_shown(gameboy); ++step) {
+        for (uint32_t frame = 0; frame < 30; ++frame) {
+            gameboy.run_frame();
+            if (popup_shown(gameboy) || hud_score(gameboy) >= 100) {
+                break;
+            }
+            require_hud_intact(gameboy, 2);
+            REQUIRE_FALSE(band_has_mover_pixels(gameboy, 0));
+            top_danger += band_danger_kind(gameboy, 0) != kNoTile ? 1 : 0;
+            ++watched;
+        }
+        if (!autopilot_step(gameboy)) {
+            break;
+        }
+    }
+    REQUIRE(watched > 1000u);
+    // a mover crosses the whole 160 px in well under this, so the digits' columns were swept clean
+    REQUIRE(top_danger > 240u);
+}
+
+TEST_CASE("digits_form_one_strip") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    REQUIRE(autopilot(gameboy, 10, 40) >= 10);
+
+    const std::vector<DigitRun> digits = hud_digits(gameboy);
+    REQUIRE(digits.size() == 2u);
+    // the badges abut, so the pair reads as one strip: no separator column between the cells
+    REQUIRE(digits[1].x0 == digits[0].x1 + 1);
+    for (int x = digits[0].x0; x <= digits[1].x1; ++x) {
+        REQUIRE(hud_column_lit(gameboy, x));
+    }
 }

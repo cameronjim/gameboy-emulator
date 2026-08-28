@@ -79,3 +79,13 @@ out-of-scope items noticed during milestones, per claude.md rule 8.
 - emulator harness: run_frame now ends on the ppu vblank edge (fix landed
   upstream), so the crossy tests' two-scanline mover reads are belt and
   braces rather than a workaround; they can be simplified some day.
+- crossy: the top visible band draws no mover sprites, so a train reaching it
+  keeps its bg carriages but loses its nose and rear until the lane drops to
+  band 1. cheap and it never touches collision, but a sharp eye can see the
+  block's ends pop in at the seam.
+- crossy: a band 0 danger lane still burns its pool slots while parked, so the
+  worst case sprite budget is unchanged rather than improved. freeing those
+  slots would let the generator run one more danger lane in the window.
+- crossy: the digit badge fills all 8 px, so a 3 px glyph now sits half a pixel
+  left of its cell's centre. a redrawn 8 px wide glyph set would centre exactly
+  and is the only way to fix it.
