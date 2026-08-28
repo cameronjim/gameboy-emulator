@@ -24,6 +24,49 @@ const uint8_t kTreeTile[16] = {
     0xFF, 0xFF, // 33333333
 };
 
+const uint8_t kRoadTile[16] = {
+    0x00, 0xFF, // 22222222
+    0x00, 0xFF, // 22222222
+    0x00, 0xFF, // 22222222
+    0x00, 0xFF, // 22222222
+    0x00, 0xFF, // 22222222
+    0x00, 0xFF, // 22222222
+    0x00, 0xFF, // 22222222
+    0x00, 0xFF, // 22222222
+};
+
+// the dash sits in the bottom rows, so a lane's two tile rows meet on the center line
+const uint8_t kRoadStripeTile[16] = {
+    0x00, 0xFF, // 22222222
+    0x00, 0xFF, // 22222222
+    0x00, 0xFF, // 22222222
+    0x00, 0xFF, // 22222222
+    0x00, 0xFF, // 22222222
+    0x00, 0xFF, // 22222222
+    0x00, 0xC3, // 22....22
+    0x00, 0xC3, // 22....22
+};
+
+// one 16x8 car as two tiles in id order: its front half then its rear half
+const uint8_t kCarTiles[32] = {
+    0x1F, 0x00, // ...11111
+    0x3F, 0x1C, // ..133311
+    0x7F, 0x1C, // .1133311
+    0xFF, 0x00, // 11111111
+    0xFF, 0x00, // 11111111
+    0xFF, 0x00, // 11111111
+    0x31, 0x30, // ..33...1
+    0x00, 0x00, // ........
+    0xF8, 0x00, // 11111...
+    0xFC, 0x38, // 113331..
+    0xFE, 0x38, // 1133311.
+    0xFF, 0x00, // 11111111
+    0xFF, 0x00, // 11111111
+    0xFF, 0x00, // 11111111
+    0x8C, 0x0C, // 1...33..
+    0x00, 0x00, // ........
+};
+
 // two chick frames in id order: standing, then lifted mid hop with its legs out
 const uint8_t kChickTiles[32] = {
     0x00, 0x3C, // ..2222..
