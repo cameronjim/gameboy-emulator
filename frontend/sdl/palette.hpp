@@ -85,3 +85,77 @@ inline uint32_t colorize(uint16_t id, uint8_t shade, uint32_t x, uint32_t y, uin
         return kWhite;
     }
 }
+
+// four argb entries per shade, the way a game boy color palette works
+using Palette4 = std::array<uint32_t, 4>;
+
+// shade 0 is black and shade 3 white here, and the games set bgp to identity
+inline constexpr Palette4 kGrayShades = {kBlack, 0xFF4C4C55u, 0xFF9C9CA8u, kWhite};
+
+// crossy road pins every tile id, so each lane kind gets its own palette.
+// the art's own shade usage drives which entries matter: grass is shade 0 with
+// shade 1 sprigs, road is flat shade 2, water is shade 1 under shade 3 crests.
+inline constexpr Palette4 kCrossyGrass = {0xFF74BE45u, 0xFF4C9A2Bu, 0xFF97D46Fu, 0xFFC6EDA4u};
+// the alt lane draws its sprigs in shade 2, the even lane's in shade 1
+inline constexpr Palette4 kCrossyGrassAlt = {0xFF57972Fu, 0xFF44802Au, 0xFF3D7220u, 0xFF8CC05Cu};
+inline constexpr Palette4 kCrossyTree = {0xFF0C2A10u, 0xFF14421Bu, 0xFF0E3616u, 0xFF1A5322u};
+inline constexpr Palette4 kCrossyRoad = {0xFF2A2C30u, 0xFF4A4E54u, 0xFF6E7278u, 0xFFB9BEC4u};
+// the dash is the tile's shade 0, so it is the one entry that goes white
+inline constexpr Palette4 kCrossyRoadStripe = {0xFFF4F4ECu, 0xFF4A4E54u, 0xFF6E7278u, 0xFFB9BEC4u};
+inline constexpr Palette4 kCrossyWater = {0xFF0B2A66u, 0xFF2A6FD8u, 0xFF4E97E8u, 0xFF9FD4FFu};
+inline constexpr Palette4 kCrossyRail = {0xFF2A2018u, 0xFF5A3A22u, 0xFF8A8580u, 0xFFD8DCE0u};
+// the crossbuck cell is shade 3, its x shade 0: a red field makes the blink pop
+inline constexpr Palette4 kCrossyWarn = {0xFFFFE9A8u, 0xFF8C1E16u, 0xFFB52A20u, 0xFFE23B2Eu};
+inline constexpr Palette4 kCrossyCar = {kBlack, 0xFFE0342Au, 0xFF9E1F18u, 0xFFDCEBFFu};
+inline constexpr Palette4 kCrossyLog = {kBlack, 0xFF3A2410u, 0xFF9A6534u, 0xFF5B3A1Cu};
+// the train's windows are its shade 1, so they light up warm against the slate
+inline constexpr Palette4 kCrossyTrain = {kBlack, 0xFFFFD34Au, 0xFF2C3340u, 0xFF5A6473u};
+inline constexpr Palette4 kCrossyEagle = {kBlack, 0xFF2A1A0Cu, 0xFFF2EAD8u, 0xFF4A3018u};
+// the chick's body is shade 2 and its beak, eyes and legs shade 3
+inline constexpr Palette4 kCrossyChick = {kBlack, 0xFFE06A00u, kWhite, 0xFFFF9A12u};
+
+// id: low byte tile index, bit 8 sprite. crossy's bg and sprite tiles occupy
+// disjoint pinned ranges, so the tile index alone picks the palette.
+inline uint32_t colorize_crossy(uint16_t id, uint8_t shade) {
+    const uint8_t tile = static_cast<uint8_t>(id & 0xFFu);
+    const uint8_t s = shade & 0x3u;
+    switch (tile) {
+    case 0xA0:
+        return kCrossyGrass[s];
+    case 0xA1:
+        return kCrossyTree[s];
+    case 0xA2:
+        return kCrossyRoad[s];
+    case 0xA3:
+        return kCrossyRoadStripe[s];
+    case 0xA4:
+        return kCrossyWater[s];
+    case 0xA5:
+        return kCrossyRail[s];
+    case 0xA6:
+        return kCrossyWarn[s];
+    case 0xA7:
+        return kCrossyGrassAlt[s];
+    default:
+        break;
+    }
+    if (tile >= 0xC0 && tile <= 0xC1) {
+        return kCrossyCar[s];
+    }
+    // 0xc5-0xc6 are unpinned, so a wider log keeps the same wood
+    if (tile >= 0xC4 && tile <= 0xC6) {
+        return kCrossyLog[s];
+    }
+    if (tile >= 0xC8 && tile <= 0xCB) {
+        return kCrossyTrain[s];
+    }
+    if (tile >= 0xCC && tile <= 0xCD) {
+        return kCrossyEagle[s];
+    }
+    // 0xe3 is reserved for a player frame by the tile contract
+    if (tile >= 0xE0 && tile <= 0xE3) {
+        return kCrossyChick[s];
+    }
+    // font, hud digits and anything unmapped keep the plain gray look
+    return kGrayShades[s];
+}

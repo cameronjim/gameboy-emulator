@@ -63,6 +63,31 @@ const char* cart_type_name(gb::CartType type) {
     return "unknown";
 }
 
+// which colorizer dresses the frame; unknown games stay plain gray
+enum class Look : uint8_t { Plain, Tetris, Crossy };
+
+Look detect_look(std::span<const uint8_t> bytes) {
+    const std::optional<gb::Cartridge> cart = gb::Cartridge::parse(bytes);
+    if (!cart) {
+        return Look::Plain;
+    }
+    if (cart->title() == "CROSSY") {
+        return Look::Crossy;
+    }
+    if (cart->title().rfind("TETRIS", 0) == 0) {
+        return Look::Tetris;
+    }
+    return Look::Plain;
+}
+
+uint32_t shade_pixel(Look look, uint16_t id, uint8_t shade, uint32_t x, uint32_t y, uint16_t block_mask,
+                     uint16_t sprite_mask) {
+    if (look == Look::Crossy) {
+        return colorize_crossy(id, shade);
+    }
+    return colorize(id, shade, x, y, block_mask, sprite_mask);
+}
+
 std::string save_path(const char* rom_path) {
     return std::string(rom_path) + ".sav";
 }
@@ -155,7 +180,8 @@ struct FlatMemory final : gb::Memory {
     std::array<uint8_t, 0x10000> mem{};
 };
 
-bool write_ppm(const gb::Gameboy& gameboy, uint16_t block_mask, uint16_t sprite_mask, const char* path) {
+bool write_ppm(const gb::Gameboy& gameboy, Look look, uint16_t block_mask, uint16_t sprite_mask,
+               const char* path) {
     std::ofstream out(path, std::ios::binary);
     if (!out) {
         std::fprintf(stderr, "cannot open %s\n", path);
@@ -167,7 +193,7 @@ bool write_ppm(const gb::Gameboy& gameboy, uint16_t block_mask, uint16_t sprite_
     for (uint32_t y = 0; y < gb::kLcdHeight; ++y) {
         for (uint32_t x = 0; x < gb::kLcdWidth; ++x) {
             const size_t i = y * gb::kLcdWidth + x;
-            const uint32_t rgb = colorize(ids[i], fb[i], x, y, block_mask, sprite_mask);
+            const uint32_t rgb = shade_pixel(look, ids[i], fb[i], x, y, block_mask, sprite_mask);
             const char px[3] = {static_cast<char>(rgb >> 16), static_cast<char>(rgb >> 8),
                                 static_cast<char>(rgb)};
             out.write(px, 3);
@@ -312,6 +338,7 @@ struct App {
     // the 16 block-style tile bitmaps harvested from the loaded rom
     std::array<std::array<uint8_t, 16>, 16> styles{};
     bool have_styles = false;
+    Look look = Look::Plain;
     // which button the held esc key is standing in for
     gb::Button esc_button = gb::Button::B;
     SDL_Renderer* renderer = nullptr;
@@ -393,7 +420,7 @@ int dump_framebuffer_ppm(App& app, uint64_t frames, const char* path) {
     for (uint64_t i = 0; i < frames; ++i) {
         app.gameboy->run_frame();
     }
-    return write_ppm(*app.gameboy, style_mask(app, 0x800), style_mask(app, 0x000), path) ? 0 : 1;
+    return write_ppm(*app.gameboy, app.look, style_mask(app, 0x800), style_mask(app, 0x000), path) ? 0 : 1;
 }
 
 } // namespace
@@ -411,6 +438,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE void wasm_load_rom(const uint8_t* data, int len)
         return;
     }
     g_app.gameboy = std::move(next);
+    g_app.look = detect_look(bytes);
     harvest_styles(g_app, bytes);
     std::printf("rom loaded\n");
 }
@@ -453,6 +481,7 @@ int main_impl(int argc, char* argv[]) {
             std::fprintf(stderr, "load_rom failed\n");
             return 1;
         }
+        app.look = detect_look(bytes);
         harvest_styles(app, bytes);
         load_battery_ram(*app.gameboy, opt.rom_path);
         if (opt.dump_ppm_path != nullptr) {
@@ -601,7 +630,8 @@ void main_loop_step(void* arg) {
             }
             if (event.type == SDL_KEYDOWN) {
                 if (event.key.keysym.sym == SDLK_F10) {
-                    write_ppm(gameboy, style_mask(app, 0x800), style_mask(app, 0x000), "framebuffer.ppm");
+                    write_ppm(gameboy, app.look, style_mask(app, 0x800), style_mask(app, 0x000),
+                              "framebuffer.ppm");
                 }
                 if (event.key.keysym.sym == SDLK_t) {
                     tile_viewer.toggle();
@@ -668,7 +698,7 @@ void main_loop_step(void* arg) {
         for (uint32_t y = 0; y < gb::kLcdHeight; ++y) {
             for (uint32_t x = 0; x < gb::kLcdWidth; ++x) {
                 const size_t i = y * gb::kLcdWidth + x;
-                app.pixels[i] = colorize(ids[i], fb[i], x, y, block_mask, sprite_mask);
+                app.pixels[i] = shade_pixel(app.look, ids[i], fb[i], x, y, block_mask, sprite_mask);
             }
         }
 
