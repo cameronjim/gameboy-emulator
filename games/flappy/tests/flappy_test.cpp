@@ -38,8 +38,23 @@ constexpr uint32_t kBootFrames = 120;
 constexpr uint8_t kBirdTileFirst = 0xE0;
 constexpr uint8_t kBirdTileLast = 0xE2;
 constexpr uint8_t kDigitTileId = 0xD0;
-constexpr uint8_t kPanelTileId = 0xB8;
-constexpr uint8_t kPanelEdgeTileId = 0xB9;
+constexpr uint8_t kGroundTileId = 0xB0;
+
+// the popup draws from an inverted copy of the font parked at 0x60
+constexpr uint8_t kInvFontFirstTile = 0x60;
+constexpr uint8_t kInvFontLastTile = 0x9F;
+
+// screen rows of the hover screen's three text lines
+constexpr size_t kTitleRow = 6;
+constexpr size_t kPromptRow = 10;
+constexpr size_t kBestRow = kPromptRow + 2;
+
+// the popup band covers screen rows 5..11 of 18
+constexpr size_t kPopupTopPx = 40;
+constexpr size_t kPopupEndPx = 96;
+
+// input is ignored for this many frames after a crash
+constexpr uint32_t kLockoutFrames = 20;
 
 bool is_bird_pixel(uint16_t id) {
     const uint8_t tile = static_cast<uint8_t>(id);
@@ -163,18 +178,17 @@ int hud_score(const gb::Gameboy& gameboy) {
     return value;
 }
 
-// the solid banner fill only ever reaches the screen through the game over window
-bool banner_panel_shown(const gb::Gameboy& gameboy) {
-    for (uint16_t id : gameboy.framebuffer_tiles()) {
-        if ((id & 0x100u) == 0 && static_cast<uint8_t>(id) == kPanelTileId) {
-            return true;
-        }
-    }
-    return false;
+// gbdk's ibm font lands ascii 0x20-0x7f on tiles 0x00-0x5f
+constexpr uint8_t font_tile(char c) {
+    return static_cast<uint8_t>(c - 0x20);
 }
 
-// font glyph cells only ever reach the screen through the game over banner
-bool banner_has_glyph(const gb::Gameboy& gameboy, uint8_t tile) {
+// the popup writes the inverted copy of the same glyph
+constexpr uint8_t popup_tile(char c) {
+    return static_cast<uint8_t>(kInvFontFirstTile + font_tile(c));
+}
+
+bool bg_has_tile(const gb::Gameboy& gameboy, uint8_t tile) {
     for (uint16_t id : gameboy.framebuffer_tiles()) {
         if ((id & 0x100u) == 0 && static_cast<uint8_t>(id) == tile) {
             return true;
@@ -183,14 +197,59 @@ bool banner_has_glyph(const gb::Gameboy& gameboy, uint8_t tile) {
     return false;
 }
 
-// gbdk's ibm font lands ascii 0x20-0x7f on tiles 0x00-0x5f
-constexpr uint8_t font_tile(char c) {
-    return static_cast<uint8_t>(c - 0x20);
+bool row_has_tile(const gb::Gameboy& gameboy, size_t row, uint8_t tile) {
+    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
+    for (size_t y = row * 8; y < row * 8 + 8; ++y) {
+        for (size_t x = 0; x < gb::kLcdWidth; ++x) {
+            const uint16_t id = ids[y * gb::kLcdWidth + x];
+            if ((id & 0x100u) == 0 && static_cast<uint8_t>(id) == tile) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
-bool banner_has_nonzero_digit(const gb::Gameboy& gameboy) {
+bool row_has_nonzero_digit(const gb::Gameboy& gameboy, size_t row) {
     for (char c = '1'; c <= '9'; ++c) {
-        if (banner_has_glyph(gameboy, font_tile(c))) {
+        if (row_has_tile(gameboy, row, font_tile(c))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// inverted font cells only ever reach the screen through the game over popup
+bool popup_shown(const gb::Gameboy& gameboy) {
+    for (uint16_t id : gameboy.framebuffer_tiles()) {
+        if ((id & 0x100u) != 0) {
+            continue;
+        }
+        const uint8_t tile = static_cast<uint8_t>(id);
+        if (tile >= kInvFontFirstTile && tile <= kInvFontLastTile) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// plain font cells only ever reach the screen through the hover screen
+bool title_shown(const gb::Gameboy& gameboy) {
+    for (uint16_t id : gameboy.framebuffer_tiles()) {
+        if ((id & 0x100u) != 0) {
+            continue;
+        }
+        const uint8_t tile = static_cast<uint8_t>(id);
+        if (tile >= 0x21u && tile <= 0x5Fu) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool popup_has_nonzero_digit(const gb::Gameboy& gameboy) {
+    for (char c = '1'; c <= '9'; ++c) {
+        if (bg_has_tile(gameboy, popup_tile(c))) {
             return true;
         }
     }
@@ -215,6 +274,10 @@ constexpr int kBirdScreenX = 40;
 
 bool is_pipe_tile(uint16_t id) {
     return (id & 0x100u) == 0 && (id & 0xFFu) >= 0xA0u && (id & 0xFFu) <= 0xA3u;
+}
+
+bool is_ground_tile(uint16_t id) {
+    return (id & 0x100u) == 0 && static_cast<uint8_t>(id) == kGroundTileId;
 }
 
 // screen x of the leftmost pipe pixel on the whole screen
@@ -243,18 +306,9 @@ size_t count_ground_pixels(const gb::Gameboy& gameboy) {
     return found;
 }
 
-// only the game over banner puts font glyphs on screen once play has started
-bool game_over_shown(const gb::Gameboy& gameboy) {
-    for (uint16_t id : gameboy.framebuffer_tiles()) {
-        if ((id & 0x100u) != 0) {
-            continue;
-        }
-        const uint8_t tile = static_cast<uint8_t>(id);
-        if (tile >= 0x21u && tile <= 0x5Fu) {
-            return true;
-        }
-    }
-    return false;
+// the bird is parked offscreen the frame the run ends
+bool alive(const gb::Gameboy& gameboy) {
+    return bird_y(gameboy) != kNoBird;
 }
 
 void press(gb::Gameboy& gameboy, gb::Button button, uint32_t frames) {
@@ -350,12 +404,25 @@ TEST_CASE("title_shows_bobbing_bird") {
         REQUIRE(y != kNoBird);
         lowest = std::max(lowest, y);
         highest = std::min(highest, y);
-        // the title never falls into a run, so the banner must never appear
-        REQUIRE_FALSE(banner_panel_shown(gameboy));
+        // the title never falls into a run, so the popup must never appear
+        REQUIRE_FALSE(popup_shown(gameboy));
     }
     // a bob, not a fall: the bird oscillates inside a narrow band
     REQUIRE(lowest - highest >= 2);
     REQUIRE(lowest - highest <= 16);
+}
+
+TEST_CASE("hover_shows_best") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy gameboy;
+    REQUIRE(gameboy.load_rom(rom));
+    run(gameboy, kBootFrames);
+    // the prompt names the flap key and the line under it reads best 0 on fresh sram
+    REQUIRE(row_has_tile(gameboy, kPromptRow, font_tile('F')));
+    REQUIRE(row_has_tile(gameboy, kBestRow, font_tile('B')));
+    REQUIRE(row_has_tile(gameboy, kBestRow, font_tile('0')));
+    REQUIRE_FALSE(row_has_nonzero_digit(gameboy, kBestRow));
 }
 
 TEST_CASE("run_starts_on_first_flap") {
@@ -450,18 +517,19 @@ TEST_CASE("bird_never_sinks_past_the_ground") {
     bool ended = false;
     for (uint32_t i = 0; i < 600 && !ended; ++i) {
         gameboy.run_frame();
-        // the banner hides the corpse, so stop reading the bird once the run ends
-        ended = game_over_shown(gameboy);
-        if (ended) {
+        const int y = bird_y(gameboy);
+        // the bird is parked offscreen the frame the run ends
+        if (y == kNoBird) {
+            ended = true;
             break;
         }
-        const int y = bird_y(gameboy);
-        REQUIRE(y != kNoBird);
         REQUIRE(y >= 0);
         REQUIRE(y + kBirdSizePx <= kGroundTopPx);
     }
     // the ceiling still clamps, but the ground ends the run instead of holding the bird up
     REQUIRE(ended);
+    run(gameboy, 8);
+    REQUIRE(popup_shown(gameboy));
 }
 
 TEST_CASE("holding_a_does_not_autofire") {
@@ -474,11 +542,12 @@ TEST_CASE("holding_a_does_not_autofire") {
     gameboy.set_button(gb::Button::A, true);
     for (uint32_t i = 0; i < 60; ++i) {
         gameboy.run_frame();
-        // the banner hides the corpse, so the sample run stops at the crash
-        if (game_over_shown(gameboy)) {
+        const int y = bird_y(gameboy);
+        // the sample run stops at the crash, where the bird leaves the screen
+        if (y == kNoBird) {
             break;
         }
-        ys.push_back(bird_y(gameboy));
+        ys.push_back(y);
     }
     gameboy.set_button(gb::Button::A, false);
 
@@ -540,21 +609,24 @@ TEST_CASE("falling_to_the_ground_ends_the_run") {
     gb::Gameboy gameboy;
     start_play(gameboy, rom);
 
-    // the banner covers the corpse, so read the resting height on the frame it lands
+    // the bird vanishes the frame it dies, so keep the last height it was drawn at
     int resting = kNoBird;
-    for (uint32_t i = 0; i < 200 && !game_over_shown(gameboy); ++i) {
+    uint32_t frames = 0;
+    for (; frames < 200; ++frames) {
         gameboy.run_frame();
         const int y = bird_y(gameboy);
-        if (y != kNoBird) {
-            resting = y;
+        if (y == kNoBird) {
+            break;
         }
+        resting = y;
     }
-    REQUIRE(game_over_shown(gameboy));
+    REQUIRE(frames < 200);
     REQUIRE(resting != kNoBird);
     REQUIRE(resting > kGroundTopPx - 2 * kBirdSizePx);
 
-    // the round is frozen: no sprite ever climbs back out from behind the banner
+    // the round is frozen: the bird stays parked and the popup takes the screen
     run(gameboy, 60);
+    REQUIRE(popup_shown(gameboy));
     REQUIRE(bird_y(gameboy) == kNoBird);
 }
 
@@ -565,51 +637,30 @@ TEST_CASE("hitting_a_pipe_ends_the_run") {
     start_play(gameboy, rom);
 
     int killed_at = kNoBird;
+    int last = kNoBird;
     for (uint32_t frame = 0; frame < 250; ++frame) {
         step_flapping(gameboy, frame);
-        if (game_over_shown(gameboy)) {
-            killed_at = bird_y(gameboy);
+        const int y = bird_y(gameboy);
+        if (y == kNoBird) {
+            killed_at = last;
             break;
         }
+        last = y;
     }
     REQUIRE(killed_at != kNoBird);
     // constant flapping pins the bird at the ceiling, so this is the pipe's upper arm
     REQUIRE(killed_at < kGroundTopPx / 2);
 }
 
-TEST_CASE("restart_gives_a_fresh_run") {
-    const std::vector<uint8_t> rom = read_flappy_rom();
-
-    gb::Gameboy gameboy;
-    start_play(gameboy, rom);
-    run(gameboy, 200);
-    REQUIRE(game_over_shown(gameboy));
-
-    press(gameboy, gb::Button::Start, 2);
-    // twice the usual settle: the old sprite position lingers while the lcd is off
-    run(gameboy, 2 * kEnterPlayFrames);
-    REQUIRE_FALSE(game_over_shown(gameboy));
-    // scroll is back at zero, so the first pipe is still off the right edge
-    REQUIRE(leftmost_pipe_x(gameboy) == kNoPipe);
-
-    const int y = bird_y(gameboy);
-    REQUIRE(y != kNoBird);
-    REQUIRE(y + kBirdSizePx < kGroundTopPx);
-    // the restart press flaps too, so the bird climbs before gravity takes it back down
-    run(gameboy, 40);
-    REQUIRE(bird_y(gameboy) > y);
-}
-
 // searched locally against this rom with a lookahead autopilot; frame 0 is the start press itself
 // re-search after any rom change: the gap seed is div at world_init
-constexpr std::array<uint32_t, 10> kSurvivingFlaps = {0, 30, 36, 42, 67, 98, 119, 151, 188, 218};
+constexpr std::array<uint32_t, 10> kSurvivingFlaps = {0, 32, 38, 44, 50, 81, 111, 118, 153, 193};
 
 // the same search carried out to score 14, for the hud and difficulty tests
-constexpr std::array<uint32_t, 57> kLongScript = {
-    0,    30,   36,   42,   67,   98,   119,  151,  188,  218,  248,  266,  297,  315,  344,
-    375,  405,  435,  472,  502,  532,  563,  593,  599,  634,  674,  702,  733,  764,  793,
-    824,  830,  842,  848,  879,  886,  921,  968,  982,  1018, 1034, 1040, 1046, 1072, 1103,
-    1146, 1151, 1184, 1190, 1196, 1202, 1208, 1217, 1252, 1278, 1298, 1328};
+constexpr std::array<uint32_t, 53> kLongScript = {
+    0,   32,  38,  44,   50,   81,   111,  118,  153,  193,  222,  252,  292,  311,  346,  361,  392, 405,
+    442, 457, 486, 500,  537,  560,  592,  600,  635,  674,  693,  729,  763,  792,  823,  828,  862, 892,
+    922, 952, 983, 1013, 1033, 1062, 1093, 1124, 1140, 1177, 1187, 1193, 1221, 1252, 1286, 1294, 1330};
 // the long script clears its fourteenth pipe at this frame and stops flapping soon after
 constexpr uint32_t kLongScriptFrames = 1360;
 
@@ -626,7 +677,7 @@ TEST_CASE("a_scripted_run_survives_the_first_pipe") {
         gameboy.set_button(gb::Button::A, flap);
         gameboy.run_frame();
         gameboy.set_button(gb::Button::A, false);
-        REQUIRE_FALSE(game_over_shown(gameboy));
+        REQUIRE(alive(gameboy));
         const int x = leftmost_pipe_x(gameboy);
         // the whole first pipe is behind the bird's column by now
         cleared = cleared || (x != kNoPipe && x + 20 < kBirdScreenX);
@@ -660,15 +711,24 @@ void long_script_frame(gb::Gameboy& gameboy, uint32_t frame) {
     gameboy.set_button(gb::Button::A, false);
 }
 
-// stops flapping and waits for the banner
+// waits for the crash, then for the staged popup to finish drawing
 void run_until_over(gb::Gameboy& gameboy, uint32_t limit) {
     for (uint32_t i = 0; i < limit; ++i) {
         gameboy.run_frame();
-        if (game_over_shown(gameboy)) {
+        if (popup_shown(gameboy)) {
+            run(gameboy, 6);
             return;
         }
     }
     FAIL("the run never reached game over");
+}
+
+// the popup ignores input for a lockout, so wait it out before the dismissing press
+void dismiss(gb::Gameboy& gameboy, gb::Button button) {
+    run(gameboy, kLockoutFrames + 4);
+    press(gameboy, button, 2);
+    // twice the usual settle: the lcd is off while the hover screen is redrawn
+    run(gameboy, 2 * kEnterPlayFrames);
 }
 
 // peak to peak, not peak: a triggered channel at volume zero still sits at its dac floor
@@ -701,7 +761,7 @@ TEST_CASE("score_hud_counts_passed_pipes") {
     bool scored = false;
     for (uint32_t frame = 0; frame < kScriptFrames && !scored; ++frame) {
         script_frame(gameboy, frame);
-        REQUIRE_FALSE(game_over_shown(gameboy));
+        REQUIRE(alive(gameboy));
         scored = !hud_shows_digit(gameboy, 0);
     }
     REQUIRE(scored);
@@ -753,17 +813,183 @@ TEST_CASE("game_over_shows_best") {
     gb::Gameboy quiet;
     start_play(quiet, rom);
     run_until_over(quiet, 300);
-    REQUIRE(banner_has_glyph(quiet, font_tile('S')));
-    REQUIRE(banner_has_glyph(quiet, font_tile('B')));
+    REQUIRE(bg_has_tile(quiet, popup_tile('S')));
+    REQUIRE(bg_has_tile(quiet, popup_tile('B')));
     // a scoreless first death: score and best both read zero
-    REQUIRE(banner_has_glyph(quiet, font_tile('0')));
-    REQUIRE_FALSE(banner_has_nonzero_digit(quiet));
+    REQUIRE(bg_has_tile(quiet, popup_tile('0')));
+    REQUIRE_FALSE(popup_has_nonzero_digit(quiet));
 
     gb::Gameboy scored;
     start_play(scored, rom);
     run_script(scored, kScriptFrames);
     run_until_over(scored, 300);
-    REQUIRE(banner_has_nonzero_digit(scored));
+    REQUIRE(popup_has_nonzero_digit(scored));
+}
+
+TEST_CASE("game_over_popup_is_centered_and_solid") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    run_script(gameboy, kScriptFrames);
+    run_until_over(gameboy, 300);
+
+    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
+    for (size_t y = kPopupTopPx; y < kPopupEndPx; ++y) {
+        for (size_t x = 0; x < gb::kLcdWidth; ++x) {
+            const uint16_t id = ids[y * gb::kLcdWidth + x];
+            // the whole band is popup fill or an inverted glyph: no world, no border, one colour
+            REQUIRE_FALSE(is_pipe_tile(id));
+            REQUIRE_FALSE(is_ground_tile(id));
+            REQUIRE(static_cast<uint8_t>(id) >= kInvFontFirstTile);
+            REQUIRE(static_cast<uint8_t>(id) <= kInvFontLastTile);
+        }
+    }
+
+    // the frozen world still shows above and below the band
+    bool above = false;
+    bool below = false;
+    for (size_t y = 0; y < gb::kLcdHeight; ++y) {
+        for (size_t x = 0; x < gb::kLcdWidth; ++x) {
+            const uint16_t id = ids[y * gb::kLcdWidth + x];
+            if (!is_pipe_tile(id) && !is_ground_tile(id)) {
+                continue;
+            }
+            above = above || y < kPopupTopPx;
+            below = below || y >= kPopupEndPx;
+        }
+    }
+    REQUIRE(above);
+    REQUIRE(below);
+
+    for (char c : std::string("GAMEOVRSCBPNYK")) {
+        REQUIRE(bg_has_tile(gameboy, popup_tile(c)));
+    }
+    // the bird may have died right where the popup sits, so it is parked offscreen
+    REQUIRE(count_bird_pixels(gameboy) == 0u);
+}
+
+TEST_CASE("an_early_flap_does_not_dismiss_the_popup") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    uint32_t frames = 0;
+    for (; frames < 300 && alive(gameboy); ++frames) {
+        gameboy.run_frame();
+    }
+    REQUIRE(frames < 300);
+
+    run(gameboy, 5);
+    press(gameboy, gb::Button::A, 2);
+    run(gameboy, 2 * kEnterPlayFrames);
+    REQUIRE(popup_shown(gameboy));
+    REQUIRE_FALSE(title_shown(gameboy));
+}
+
+TEST_CASE("any_button_returns_to_hover") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    run_until_over(gameboy, 300);
+    REQUIRE(popup_shown(gameboy));
+
+    // b is neither the start nor the flap key, and it still clears the popup
+    dismiss(gameboy, gb::Button::B);
+    REQUIRE_FALSE(popup_shown(gameboy));
+    REQUIRE(row_has_tile(gameboy, kTitleRow, font_tile('F')));
+    REQUIRE(row_has_tile(gameboy, kTitleRow, font_tile('Y')));
+    REQUIRE(leftmost_pipe_x(gameboy) == kNoPipe);
+
+    int lowest = 0;
+    int highest = gb::kLcdHeight;
+    for (uint32_t i = 0; i < 80; ++i) {
+        gameboy.run_frame();
+        const int y = bird_y(gameboy);
+        REQUIRE(y != kNoBird);
+        lowest = std::max(lowest, y);
+        highest = std::min(highest, y);
+    }
+    REQUIRE(lowest - highest >= 2);
+    REQUIRE(lowest - highest <= 16);
+
+    // one fresh a press starts the next run
+    press(gameboy, gb::Button::A, 2);
+    run(gameboy, 2 * kEnterPlayFrames);
+    REQUIRE_FALSE(title_shown(gameboy));
+    bool pipe = false;
+    for (uint32_t frame = 0; frame < 300 && !pipe; ++frame) {
+        step_flapping(gameboy, frame);
+        pipe = leftmost_pipe_x(gameboy) != kNoPipe;
+    }
+    REQUIRE(pipe);
+}
+
+TEST_CASE("dismiss_press_does_not_start_a_run") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    run_until_over(gameboy, 300);
+    dismiss(gameboy, gb::Button::B);
+    REQUIRE(title_shown(gameboy));
+
+    for (uint32_t i = 0; i < 60; ++i) {
+        gameboy.run_frame();
+        // the press that cleared the popup is spent: the hover screen just keeps hovering
+        REQUIRE(title_shown(gameboy));
+        REQUIRE(leftmost_pipe_x(gameboy) == kNoPipe);
+        REQUIRE(alive(gameboy));
+    }
+}
+
+TEST_CASE("restart_gives_a_fresh_run") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    run_until_over(gameboy, 300);
+    REQUIRE(popup_shown(gameboy));
+
+    dismiss(gameboy, gb::Button::Start);
+    REQUIRE(title_shown(gameboy));
+    // best carries over into the hover screen
+    REQUIRE(row_has_tile(gameboy, kBestRow, font_tile('B')));
+
+    press(gameboy, gb::Button::A, 2);
+    run(gameboy, 2 * kEnterPlayFrames);
+    REQUIRE_FALSE(title_shown(gameboy));
+    REQUIRE_FALSE(popup_shown(gameboy));
+    // scroll is back at zero, so the first pipe is still off the right edge
+    REQUIRE(leftmost_pipe_x(gameboy) == kNoPipe);
+
+    const int y = bird_y(gameboy);
+    REQUIRE(y != kNoBird);
+    REQUIRE(y + kBirdSizePx < kGroundTopPx);
+    // the starting press flaps too, so the bird climbs before gravity takes it back down
+    int lowest = y;
+    for (uint32_t i = 0; i < 40; ++i) {
+        gameboy.run_frame();
+        const int cur = bird_y(gameboy);
+        if (cur == kNoBird) {
+            break;
+        }
+        lowest = std::max(lowest, cur);
+    }
+    REQUIRE(lowest > y);
+}
+
+TEST_CASE("hover_shows_a_new_best") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    run_script(gameboy, kScriptFrames);
+    run_until_over(gameboy, 300);
+    dismiss(gameboy, gb::Button::B);
+    REQUIRE(title_shown(gameboy));
+    REQUIRE(row_has_nonzero_digit(gameboy, kBestRow));
 }
 
 TEST_CASE("flap_makes_sound") {
@@ -794,7 +1020,7 @@ TEST_CASE("two_digit_score_renders_fully") {
     bool two = false;
     for (uint32_t frame = 0; frame < kLongScriptFrames && !two; ++frame) {
         long_script_frame(gameboy, frame);
-        REQUIRE_FALSE(game_over_shown(gameboy));
+        REQUIRE(alive(gameboy));
         two = hud_score(gameboy) >= 10;
     }
     REQUIRE(two);
@@ -850,7 +1076,7 @@ TEST_CASE("difficulty_ramps") {
     std::vector<int> scores;
     for (uint32_t frame = 0; frame < kLongScriptFrames; ++frame) {
         long_script_frame(gameboy, frame);
-        REQUIRE_FALSE(game_over_shown(gameboy));
+        REQUIRE(alive(gameboy));
         xs.push_back(leftmost_pipe_x(gameboy));
         scores.push_back(hud_score(gameboy));
     }
@@ -863,36 +1089,4 @@ TEST_CASE("difficulty_ramps") {
     REQUIRE(early < 1.1);
     REQUIRE(late > early + 0.15);
     REQUIRE(late < 1.4);
-}
-
-TEST_CASE("game_over_panel_is_solid") {
-    const std::vector<uint8_t> rom = read_flappy_rom();
-
-    gb::Gameboy gameboy;
-    start_play(gameboy, rom);
-    run_until_over(gameboy, 300);
-    run(gameboy, 4);
-    REQUIRE(banner_panel_shown(gameboy));
-
-    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
-    constexpr size_t kPanelTop = 88;
-    constexpr size_t kPanelInnerTop = kPanelTop + 8;
-    constexpr size_t kPanelInnerEnd = gb::kLcdHeight - 8;
-    for (size_t x = 0; x < gb::kLcdWidth; ++x) {
-        REQUIRE(static_cast<uint8_t>(ids[kPanelTop * gb::kLcdWidth + x]) == kPanelEdgeTileId);
-        REQUIRE(static_cast<uint8_t>(ids[(gb::kLcdHeight - 1) * gb::kLcdWidth + x]) == kPanelEdgeTileId);
-    }
-    for (size_t y = kPanelInnerTop; y < kPanelInnerEnd; ++y) {
-        for (size_t x = 0; x < gb::kLcdWidth; ++x) {
-            // no sky cell survives between the borders, so the frozen scene cannot show through
-            REQUIRE(static_cast<uint8_t>(ids[y * gb::kLcdWidth + x]) != 0x00u);
-        }
-    }
-    // the corpse carries the bg priority bit, so the ppu drops its pixels behind the panel
-    for (size_t y = kPanelTop; y < gb::kLcdHeight; ++y) {
-        for (size_t x = 0; x < gb::kLcdWidth; ++x) {
-            REQUIRE_FALSE(is_bird_pixel(ids[y * gb::kLcdWidth + x]));
-        }
-    }
-    REQUIRE(banner_has_glyph(gameboy, font_tile('G')));
 }
