@@ -49,9 +49,9 @@ constexpr size_t kTitleRow = 6;
 constexpr size_t kPromptRow = 10;
 constexpr size_t kBestRow = kPromptRow + 2;
 
-// the popup band covers screen rows 5..11 of 18
-constexpr size_t kPopupTopPx = 40;
-constexpr size_t kPopupEndPx = 96;
+// the popup band covers screen rows 4..13 of 18
+constexpr size_t kPopupTopPx = 32;
+constexpr size_t kPopupEndPx = 112;
 
 // input is ignored for this many frames after a crash
 constexpr uint32_t kLockoutFrames = 20;
@@ -1390,8 +1390,8 @@ TEST_CASE("hover_and_popup_text_are_centered") {
     Autopilot pilot;
     pilot.fly(gameboy, kScoredRunFrames);
     run_until_over(gameboy, 300);
-    // popup prompt sits on screen row 10 (band row 5 of the band at rows 5..11)
-    const auto [left, right] = glyph_span(gameboy, 10, kInvFontFirstTile + 1, kInvFontLastTile);
+    // popup prompt sits on screen row 12 (band row 8 of the band at rows 4..13)
+    const auto [left, right] = glyph_span(gameboy, 12, kInvFontFirstTile + 1, kInvFontLastTile);
     REQUIRE(left >= 0);
     REQUIRE(left + right == 19);
 }

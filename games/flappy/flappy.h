@@ -86,15 +86,15 @@
 #define kScoreMax 999U // three digits is all the hud and the popup can show
 
 // game over popup: a band of bg cells over the frozen world, no window layer involved
-#define kPopupTopRow 5U // rows 5..11 of 18 center the five text lines
-#define kPopupRows 7U
+#define kPopupTopRow 4U // rows 4..13 of 18 give the four text lines a blank row of air each
+#define kPopupRows 10U
 // scx can sit mid tile, so one more column than the screen may be visible
 #define kPopupCols 21U
 #define kPopupRowsPerFrame 2U // 42 cells is a comfortable vblank budget
 #define kPopupOverRow 1U
-#define kPopupScoreRow 2U
-#define kPopupBestRow 3U
-#define kPopupPromptRow 5U
+#define kPopupScoreRow 3U
+#define kPopupBestRow 5U
+#define kPopupPromptRow 8U
 // dead input after a crash so a panic flap cannot skip the popup
 #define kOverLockoutFrames 20U
 
