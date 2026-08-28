@@ -3,6 +3,7 @@
 #include "assets.h"
 #include "crossy.h"
 #include "movers.h"
+#include "sfx.h"
 #include "terrain.h"
 
 #include <gb/gb.h>
@@ -141,6 +142,10 @@ void chick_update(uint8_t pressed) {
             hop_left();
         } else if (pressed & J_RIGHT) {
             hop_right();
+        }
+        // a blocked press never sets a slide, so only a hop that committed makes a sound
+        if (hopping()) {
+            sfx_hop();
         }
     }
     // the counter ticks every frame; a slide in flight defers the creep to the next settled one

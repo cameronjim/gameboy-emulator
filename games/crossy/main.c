@@ -4,6 +4,7 @@
 #include "hud.h"
 #include "movers.h"
 #include "save.h"
+#include "sfx.h"
 #include "terrain.h"
 
 #include <gb/gb.h>
@@ -170,6 +171,8 @@ void main(void) {
     uint8_t hover_frames = 0;
     uint8_t afloat = 1;
     uint8_t taken = 0;
+    uint8_t drowned = 0;
+    uint8_t struck = 0;
     uint16_t score = 0;
     uint16_t shown = 0;
 
@@ -177,6 +180,7 @@ void main(void) {
     font_set(font_load(font_ibm));
     build_inverse_font();
     save_init();
+    sfx_init();
     SPRITES_8x8;
     hud_init();
     draw_title();
@@ -215,7 +219,10 @@ void main(void) {
             continue;
         }
 
-        // the only bg write of the run happens here, inside vblank
+        // the only bg writes of the run happen here, inside vblank
+        if (terrain_tick_tracks()) {
+            sfx_bell();
+        }
         // the swoop cannot be outrun, so the buttons go dead the moment it starts
         chick_update(eagle_active() ? 0U : pressed);
         movers_update();
@@ -225,6 +232,9 @@ void main(void) {
         if (chick_lane() > score) {
             score = chick_lane();
             eagle_reset();
+            if (score % kScoreChime == 0U) {
+                sfx_score();
+            }
         }
         if (score != shown) {
             shown = score;
@@ -235,7 +245,15 @@ void main(void) {
             eagle_summon();
         }
         taken = eagle_update(chick_center_x(), chick_screen_y());
-        if (taken || (!eagle_active() && (!afloat || movers_car_hit(chick_lane(), chick_center_x())))) {
+        drowned = (uint8_t)(!eagle_active() && !afloat);
+        struck = (uint8_t)(!eagle_active() && (movers_car_hit(chick_lane(), chick_center_x()) ||
+                                               terrain_train_hit(chick_lane(), chick_center_x())));
+        if (taken || drowned || struck) {
+            if (drowned) {
+                sfx_splash();
+            } else {
+                sfx_hit();
+            }
             enter_over(score);
             over_frames = 0;
             state = kStateOver;

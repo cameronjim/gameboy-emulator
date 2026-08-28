@@ -127,6 +127,7 @@ if(GBDK_HOME AND EXISTS "${GB_LCC}")
                 ${CMAKE_SOURCE_DIR}/games/crossy/eagle.c
                 ${CMAKE_SOURCE_DIR}/games/crossy/hud.c
                 ${CMAKE_SOURCE_DIR}/games/crossy/save.c
+                ${CMAKE_SOURCE_DIR}/games/crossy/sfx.c
                 ${CMAKE_SOURCE_DIR}/games/crossy/assets.c
         DEPENDS games/crossy/main.c games/crossy/crossy.h
                 games/crossy/terrain.c games/crossy/terrain.h
@@ -135,6 +136,7 @@ if(GBDK_HOME AND EXISTS "${GB_LCC}")
                 games/crossy/eagle.c games/crossy/eagle.h
                 games/crossy/hud.c games/crossy/hud.h
                 games/crossy/save.c games/crossy/save.h
+                games/crossy/sfx.c games/crossy/sfx.h
                 games/crossy/assets.c games/crossy/assets.h
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
         COMMENT "building crossy.gb with gbdk lcc"
