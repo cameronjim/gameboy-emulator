@@ -22,6 +22,19 @@
 // bg terrain tile ids, per the milestone's tile contract
 #define kGrassTileId 0xA0U
 #define kTreeTileId 0xA1U
+#define kRoadTileId 0xA2U
+#define kRoadStripeTileId 0xA3U
+
+// gbdk's ibm font lands ascii 0x20-0x7f on tiles 0x00-0x5f
+#define kFontFirstChar 0x20U
+#define kFontFirstTile 0x00U
+#define kTileBytes 16U
+
+// an inverted copy of the font's first 64 glyphs: light strokes on a solid dark cell
+#define kInvFontFirstTile 0x60U
+#define kInvFontTiles 64U
+// inverted space is a solid dark cell, so it is both the popup's fill and its blank glyph
+#define kPopupFillTileId kInvFontFirstTile
 
 // sprites: the chick at rest and in flight, then the ten hud digits
 #define kChickTileId 0xE0U
@@ -44,6 +57,7 @@
 
 // the chick is one 8x8 sprite centered in its 16 px cell
 #define kChickCellInset 4U
+#define kChickCenterInset 8U
 #define kChickSpawnCol 4U
 // on the title the chick stands one cell lower, clear of the BEST line
 #define kHoverChickScreenY 116U
@@ -58,6 +72,12 @@
 // generation: the first lanes are plain so the run always starts clear
 #define kPlainLanes 3U
 #define kMaxTreesPerLane 4U
+// lanes come in alternating chunks; roads carry cars and never carry trees
+#define kRoadChunkMin 1U
+#define kRoadChunkSpan 3U
+// two grass lanes minimum keeps visible road lanes at six, inside the oam budget
+#define kGrassChunkMin 2U
+#define kGrassChunkSpan 2U
 // the guaranteed-open column wanders at most two columns and never hugs an edge
 #define kGapWanderSpan 5U // rng % 5 gives -2..+2 after the bias
 #define kGapWanderBias 2
@@ -76,5 +96,47 @@
 #define kHudCenterOamX 88U // screen x 80; the run is centered by half a digit per digit
 #define kDigitWidthPx 8U
 #define kScoreMax 999U // three digit sprites is all the hud can show
+
+// cars: 16 px of two 8x8 sprites, y centered in their lane
+#define kCarTileId 0xC0U
+#define kCarTileCount 2U
+#define kCarLaneInset 4U
+#define kCarHalfPx 8U
+// two cars share a lane's speed on a 256 px wrapping track, so their gap never closes
+#define kCarsPerLane 2U
+#define kCarPhase 0x8000U
+// 8.8 px per frame: 0.5 to 1.0 in five steps
+#define kCarSpeedMin 128U
+#define kCarSpeedStep 32U
+#define kCarSpeedSteps 5U
+// oam x is the track position, so a car slides off either edge before it wraps
+#define kCarDrawLimit 176U
+// centers closer than this collide: 8 px of car plus 4 px of chick, minus a little mercy
+#define kCarHitPx 10
+// six road lanes can share the screen: 24 sprites past the chick and the hud
+#define kCarFirstSprite 4U
+#define kCarSprites 24U
+#define kCarSpritesPerLane 4U
+
+// game over popup: a band of bg cells over the frozen world, no window layer involved
+#define kPopupTopRow 5U // rows 5..11 of 18 center the four text lines
+#define kPopupRows 7U
+// scx is always zero here, so the band is exactly the visible columns wide
+#define kPopupCols 20U
+#define kPopupRowsPerFrame 2U // 40 cells is a comfortable vblank budget
+#define kPopupOverRow 1U
+#define kPopupScoreRow 2U
+#define kPopupBestRow 3U
+#define kPopupPromptRow 5U
+// dead input after a death so a panic hop cannot skip the popup
+#define kOverLockoutFrames 20U
+
+// battery sram, mbc1 bank 0: 4 magic bytes then the best score little endian
+#define kSramBase 0xA000U
+#define kSaveMagic0 'C'
+#define kSaveMagic1 'R'
+#define kSaveMagic2 'S'
+#define kSaveMagic3 'Y'
+#define kSaveBestOffset 4U
 
 #endif
