@@ -6,9 +6,6 @@
 // three 8x8 2bpp tiles at 0xe0: the bird facing right, wing up then glide then down
 extern const uint8_t kBirdTiles[48];
 
-// two 8x8 tiles at 0xb8: the banner's dark fill then its light border row
-extern const uint8_t kPanelTiles[32];
-
 // four tiles at 0xa0: pipe body left, body right, cap left, cap right
 extern const uint8_t kPipeTiles[64];
 

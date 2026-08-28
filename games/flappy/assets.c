@@ -29,26 +29,6 @@ const uint8_t kBirdTiles[48] = {
     0x00, 0x00, // ........
 };
 
-// banner panel: a solid dark fill then a solid light border row
-const uint8_t kPanelTiles[32] = {
-    0xFF, 0xFF, // 33333333
-    0xFF, 0xFF, // 33333333
-    0xFF, 0xFF, // 33333333
-    0xFF, 0xFF, // 33333333
-    0xFF, 0xFF, // 33333333
-    0xFF, 0xFF, // 33333333
-    0xFF, 0xFF, // 33333333
-    0xFF, 0xFF, // 33333333
-    0xFF, 0x00, // 11111111
-    0xFF, 0x00, // 11111111
-    0xFF, 0x00, // 11111111
-    0xFF, 0x00, // 11111111
-    0xFF, 0x00, // 11111111
-    0xFF, 0x00, // 11111111
-    0xFF, 0x00, // 11111111
-    0xFF, 0x00, // 11111111
-};
-
 // four pipe halves in id order: body left, body right, cap left, cap right
 const uint8_t kPipeTiles[64] = {
     0xE0, 0x9F, // 31122222

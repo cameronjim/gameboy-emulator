@@ -8,14 +8,22 @@
 // identity obp; the bird's colors 1-3 stay distinct against the white sky
 #define kBirdObp 0xE4U
 
-#define kTitleTextX 7U
+// the visible screen is 20x18 cells; text lines are centered across the 20
+#define kScreenCols 20U
 #define kTitleTextY 6U
-#define kPromptTextX 4U
 #define kPromptTextY 10U
+#define kBestTextY 12U
 
 // gbdk's ibm font lands ascii 0x20-0x7f on tiles 0x00-0x5f
 #define kFontFirstChar 0x20U
 #define kFontFirstTile 0x00U
+#define kTileBytes 16U
+
+// an inverted copy of the font's first 64 glyphs: light strokes on a solid dark cell
+#define kInvFontFirstTile 0x60U
+#define kInvFontTiles 64U
+// inverted space is a solid dark cell, so it is both the popup's fill and its blank glyph
+#define kPopupFillTileId kInvFontFirstTile
 
 // clear of the font tiles (0-95) and the score digits reserved at 0xD0-0xD9
 #define kBirdTileId 0xE0U
@@ -38,9 +46,6 @@
 #define kPipeCapLeftTileId 0xA2U
 #define kPipeCapRightTileId 0xA3U
 #define kGroundTileId 0xB0U
-#define kPanelTileId 0xB8U     // solid dark: the game over banner's fill
-#define kPanelEdgeTileId 0xB9U // solid light: the banner's top and bottom border rows
-#define kPanelTileCount 2U
 
 // the bg map is a 32 column ring; columns are rewritten as they scroll off the left
 #define kMapCols 32U
@@ -74,23 +79,20 @@
 #define kHudOamY 32U       // screen y 16
 #define kHudCenterOamX 88U // screen x 80; the run is centered by half a digit per digit
 #define kDigitWidthPx 8U
-#define kScoreMax 999U // three digits is all the hud and the banner can show
+#define kScoreMax 999U // three digits is all the hud and the popup can show
 
-// window banner sits over the bottom 56 px; wx 7 puts its left edge at screen x 0
-#define kWinX 7U
-#define kWinY 88U
-#define kWinCols 20U
-#define kWinRows 7U
-#define kPanelTopRow 0U
-#define kPanelBottomRow 6U
-#define kOverTextX 5U
-#define kOverTextY 1U
-#define kScoreTextX 5U
-#define kScoreTextY 2U
-#define kBestTextX 6U // one right of score so both numbers start in the same column
-#define kBestTextY 3U
-#define kOverPromptX 4U
-#define kOverPromptY 5U // row 4 stays blank: a fallen bird rests there, behind the panel
+// game over popup: a band of bg cells over the frozen world, no window layer involved
+#define kPopupTopRow 5U // rows 5..11 of 18 center the five text lines
+#define kPopupRows 7U
+// scx can sit mid tile, so one more column than the screen may be visible
+#define kPopupCols 21U
+#define kPopupRowsPerFrame 2U // 42 cells is a comfortable vblank budget
+#define kPopupOverRow 1U
+#define kPopupScoreRow 2U
+#define kPopupBestRow 3U
+#define kPopupPromptRow 5U
+// dead input after a crash so a panic flap cannot skip the popup
+#define kOverLockoutFrames 20U
 
 // 8.8 fixed point: 256 units is one pixel
 #define kFixedShift 8
