@@ -7,6 +7,10 @@
 #include <gb/gb.h>
 #include <stdint.h>
 
+// the difficulty ramp's speed columns; terrain owns the lane thresholds it indexes with
+static const uint16_t kRampCarMin[kRampTiers] = kRampCarMinList;
+static const uint16_t kRampLogMin[kRampTiers] = kRampLogMinList;
+
 // track records cached per ring slot, alongside terrain's lane records
 static uint8_t rng_state;
 static uint8_t mover_dir[kRingLanes];
@@ -70,20 +74,25 @@ void movers_init(uint8_t seed) {
     }
     for (i = 0; i < kRingLanes; ++i) {
         mover_dir[i] = 0;
-        mover_speed[i] = kCarSpeedMin;
+        mover_speed[i] = kRampCarMin[0];
         mover_pos[i] = 0;
     }
 }
 
-void movers_lane_init(uint8_t slot, uint8_t water) {
+void movers_lane_init(uint8_t slot, uint8_t water, uint8_t tier, uint8_t chained) {
     uint8_t roll = rng_next();
     uint8_t pick = (uint8_t)(roll >> 1);
 
-    mover_dir[slot] = (uint8_t)(roll & 1U);
-    if (water != 0U) {
-        mover_speed[slot] = (uint16_t)(kLogSpeedMin + (uint16_t)(pick % kLogSpeedSteps) * kLogSpeedStep);
+    if (water != 0U && chained != 0U) {
+        // logs sliding the same way never pass each other, so a stacked river alternates
+        mover_dir[slot] = (uint8_t)(mover_dir[(uint8_t)(slot - 1U) & kRingLaneMask] ^ 1U);
     } else {
-        mover_speed[slot] = (uint16_t)(kCarSpeedMin + (uint16_t)(pick % kCarSpeedSteps) * kCarSpeedStep);
+        mover_dir[slot] = (uint8_t)(roll & 1U);
+    }
+    if (water != 0U) {
+        mover_speed[slot] = (uint16_t)(kRampLogMin[tier] + (uint16_t)(pick % kLogSpeedSteps) * kLogSpeedStep);
+    } else {
+        mover_speed[slot] = (uint16_t)(kRampCarMin[tier] + (uint16_t)(pick % kCarSpeedSteps) * kCarSpeedStep);
     }
     mover_pos[slot] = (uint16_t)((uint16_t)rng_next() << 8);
 }

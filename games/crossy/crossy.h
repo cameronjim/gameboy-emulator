@@ -82,7 +82,6 @@
 
 // generation: the first lanes are plain so the run always starts clear
 #define kPlainLanes 3U
-#define kMaxTreesPerLane 4U
 // lanes alternate grass with a danger chunk; danger lanes never carry trees
 #define kRoadChunkMin 1U
 #define kRoadChunkSpan 3U
@@ -131,8 +130,7 @@
 #define kCarTileCount 2U
 #define kCarSprites 2U
 #define kCarHalfPx 8U
-// 8.8 px per frame: 0.5 to 1.0 in five steps
-#define kCarSpeedMin 128U
+// five speeds an eighth of a pixel apart, off whichever minimum the ramp tier gives
 #define kCarSpeedStep 32U
 #define kCarSpeedSteps 5U
 // centers closer than this collide: 8 px of car plus 4 px of chick, minus a little mercy
@@ -145,14 +143,40 @@
 #define kLogHalfPx 12U
 // the lane's lower half: dmg's lower oam x wins, so a log level with the chick would bury its rider
 #define kLogLaneInset 8U
-// 8.8 px per frame: 0.41 to 0.78 in four steps, every one a whole 32nd of a pixel
-#define kLogSpeedMin 104U
+// four speeds an eighth of a pixel apart, off whichever minimum the ramp tier gives
 #define kLogSpeedStep 32U
 #define kLogSpeedSteps 4U
 // the chick rides while its center is within 12 px of a log's
 #define kLogRidePx 12
 // 8.8 left x 152, so the chick's center reaches 156: the last px a ride survives
 #define kRideMaxFixed 0x9800U
+
+// difficulty ramp: four tiers keyed by the lane being generated, six lanes ahead of the chick
+#define kRampTiers 4U
+// first lane of each tier
+#define kRampLaneList {0U, 12U, 30U, 60U}
+// 8.8 px per frame, slowest car of a tier; four steps up from it reach 1.0, 1.25, 1.5, 1.75
+#define kRampCarMinList {128U, 192U, 256U, 320U}
+// 8.8 px per frame, slowest log of a tier; three steps up from it reach 0.78, 0.87, 0.97, 0.97
+#define kRampLogMinList {104U, 128U, 152U, 152U}
+// trees a grass lane may carry; the span rule still leaves the guaranteed path open
+#define kRampTreesList {4U, 4U, 5U, 5U}
+
+// the camera advances a lane of its own every four seconds; any hop driven advance restarts it
+#define kCreepFrames 240U
+
+// the eagle: ten seconds without reaching a new lane and the run is over
+#define kEagleIdleFrames 600U
+// one 16x8 bird of two 8x8 sprites in tile id order
+#define kEagleTileId 0xCCU
+#define kEagleTileCount 2U
+#define kEagleSprites 2U
+#define kEagleHalfPx 8U
+// two fixed slots past the mover pool: 36 of 40 oam in the worst case
+#define kEagleFirstSprite 34U
+// the swoop starts just under the hud band, so its two sprites never join the digits' scanlines
+#define kEagleStartY 16U
+#define kEagleDivePx 4U
 
 // game over popup: a band of bg cells over the frozen world, no window layer involved
 #define kPopupTopRow 5U // rows 5..11 of 18 center the four text lines

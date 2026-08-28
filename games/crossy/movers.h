@@ -7,7 +7,7 @@
 void movers_init(uint8_t seed);
 
 // rolls one danger lane's direction, speed and starting phase into its ring slot
-void movers_lane_init(uint8_t slot, uint8_t water);
+void movers_lane_init(uint8_t slot, uint8_t water, uint8_t tier, uint8_t chained);
 
 // advances and draws only the danger lanes the camera can see
 void movers_update(void);
