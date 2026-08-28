@@ -78,8 +78,9 @@ void bird_hover(void) {
     }
 }
 
-void bird_die(void) {
-    set_sprite_prop(0, S_PRIORITY);
+// the popup can cover wherever the bird died, so park it clear of the screen
+void bird_hide(void) {
+    move_sprite(0, 0, 0);
 }
 
 uint8_t bird_top_px(void) {
