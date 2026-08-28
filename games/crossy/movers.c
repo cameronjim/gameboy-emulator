@@ -67,6 +67,11 @@ static int16_t lane_step(uint8_t slot) {
     return mover_dir[slot] != 0U ? (int16_t)mover_speed[slot] : (int16_t)(0 - (int16_t)mover_speed[slot]);
 }
 
+// a sprite starting above the band 0/1 seam shares scanlines with the hud, which it may cover
+static uint8_t on_hud_lines(uint8_t y) {
+    return y < kMoverMinOamY ? 1U : 0U;
+}
+
 // a mover is a row of 8x16 sprites centered on the track x, parked whole once the track leaves screen
 static uint8_t draw_mover(uint8_t sprite, uint8_t tx, uint8_t y, uint8_t water) {
     uint8_t parts = water ? kLogSprites : kCarSprites;
@@ -75,7 +80,7 @@ static uint8_t draw_mover(uint8_t sprite, uint8_t tx, uint8_t y, uint8_t water) 
     uint8_t i;
 
     for (i = 0; i < parts; ++i) {
-        if (tx >= kMoverDrawLimit) {
+        if (tx >= kMoverDrawLimit || on_hud_lines(y) != 0U) {
             park(sprite);
         } else {
             set_sprite_tile(sprite, (uint8_t)(base + (uint8_t)(i * kTilesPerSprite)));
@@ -92,7 +97,7 @@ static uint8_t draw_block(uint8_t sprite, int16_t x, uint8_t y, const uint8_t* o
     uint8_t i;
 
     for (i = 0; i < parts; ++i) {
-        if (x <= -(int16_t)kSpritePx || x >= (int16_t)kScreenWidthPx) {
+        if (x <= -(int16_t)kSpritePx || x >= (int16_t)kScreenWidthPx || on_hud_lines(y) != 0U) {
             park(sprite);
         } else {
             set_sprite_tile(sprite, (uint8_t)(kTrainTileId + (uint8_t)(order[i] * kTilesPerSprite)));

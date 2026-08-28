@@ -24,7 +24,7 @@ void hud_hide(void) {
     }
 }
 
-// the run of digit sprites, pixel centered on center_x whatever its length
+// the run of digit sprites, its whole n*8 px strip centered on center_x whatever its length
 static void draw_digits(uint16_t value, uint8_t center_x, uint8_t oam_y) {
     uint8_t digit[kHudDigits];
     uint8_t shown;

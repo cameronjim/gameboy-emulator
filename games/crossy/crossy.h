@@ -119,14 +119,14 @@
 #define kHudDigits 3U
 #define kHudOamY 24U       // screen y 8
 #define kHudCenterOamX 88U // screen x 80; the run is centered by half a digit per digit
+// the badge fills the whole cell, so digits at this pitch read as one unbroken strip
 #define kDigitWidthPx 8U
 #define kDigitHalfPx 4U
 #define kScoreMax 999U // three digit sprites is all the hud can show
-// the hover banner reuses the hud's three sprites, so any best is pixel centered whatever its length
+// the hover banner reuses the hud's three sprites, so any best is centered whatever its length
 // the banner's lanes draw no movers, so those scanlines carry three sprites and nothing else
 #define kHoverBestOamY 56U // screen y 40, the banner's last row
-// the glyph badge is 7 of the cell's 8 px, so the lit run centers one px right of the cells
-#define kHoverBestCenterOamX 89U
+#define kHoverBestCenterOamX 88U
 
 // movers: cars and logs ride one wrapping track per lane, drawn from the lane's top edge
 // an 8x16 sprite parked there covers exactly the lane, so one scanline still sees one lane
@@ -143,12 +143,17 @@
 #define kWaterWrapSlack 0x4000U
 // the track doubles as oam x, so a mover slides off either edge before it wraps
 #define kMoverDrawLimit 176U
+// dmg breaks a sprite tie by smaller x, so a mover on the hud's scanlines can cover the digits
+// band 0 is six lanes ahead of the chick and unreachable, so its movers are simply not drawn
+// oam y 32 is the band 0/1 seam: a sprite there starts at screen y 16, clear of the digits
+// the eagle starts its dive at that same seam, for that same scanline reason
+#define kMoverMinOamY 32U
 // worst case in nine visible lanes is five water lanes: water chunks cap at 2, grass at 2
 #define kMoverFirstSprite 4U
 #define kMoverSprites 30U
 // 5 water lanes x 6 log parts is the pool exactly, as is 4 water lanes plus one 6 slot train
 // 36 of 40 oam with the eagle; 8x16 changed no count, and a mover still spans only its own lane
-// so a scanline sees at most 6 movers: play's worst line is 6 log parts + 3 hud digits
+// so a scanline sees at most 6 movers, and never on the hud's own lines: those carry 3 digits alone
 // the swoop hides the digits, leaving 6 + 2 eagle + 1 chick: still inside the dmg's 10
 
 // cars: 16x16 of two 8x16 sprites, its left half then its right
@@ -216,7 +221,7 @@
 // a whole train of sprites is impossible: dmg draws ten a scanline, so only its two ends are oam
 // head 4 plus tail 2 is the same six pool slots a water lane's two logs take, so pool math is unchanged
 // worst window is 4 water lanes (24) plus one track (6) = 30, the pool exactly
-// a scanline sees head 4 or tail 2, plus the 3 hud digits when the track is the top lane: 7 of 10
+// a scanline sees head 4 or tail 2; a top lane track parks its ends, so the digits keep their line
 #define kTrainSprites 6U
 #define kTrainHeadSprites 4U
 #define kTrainTailSprites 2U
