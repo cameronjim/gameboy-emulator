@@ -12,6 +12,9 @@ void chick_hover(void);
 // starts a hop from the frame's fresh presses, then steps the slide 2 px
 void chick_update(uint8_t pressed);
 
+// drifts the chick along with the log under it; 0 once the water has drowned or carried it off
+uint8_t chick_afloat(void);
+
 void chick_draw(void);
 
 void chick_hide(void);

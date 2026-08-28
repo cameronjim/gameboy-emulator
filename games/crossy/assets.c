@@ -47,6 +47,30 @@ const uint8_t kRoadStripeTile[16] = {
     0x00, 0xC3, // 22....22
 };
 
+// two staggered lines of dark crests ripple across a pale surface
+const uint8_t kWaterTile[16] = {
+    0xFF, 0x00, // 11111111
+    0xFF, 0x66, // 13311331
+    0xFF, 0x99, // 31133113
+    0xFF, 0x00, // 11111111
+    0xFF, 0x00, // 11111111
+    0xFF, 0xCC, // 33113311
+    0xFF, 0x33, // 11331133
+    0xFF, 0x00, // 11111111
+};
+
+// one 8x8 slab of dark log with black bark grain, tiled three times across
+const uint8_t kLogTile[16] = {
+    0xFF, 0xFF, // 33333333
+    0x00, 0xFF, // 22222222
+    0x66, 0xFF, // 23322332
+    0x00, 0xFF, // 22222222
+    0x99, 0xFF, // 32233223
+    0x00, 0xFF, // 22222222
+    0x66, 0xFF, // 23322332
+    0xFF, 0xFF, // 33333333
+};
+
 // one 16x8 car as two tiles in id order: its front half then its rear half
 const uint8_t kCarTiles[32] = {
     0x1F, 0x00, // ...11111

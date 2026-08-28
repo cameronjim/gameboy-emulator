@@ -15,6 +15,12 @@ extern const uint8_t kRoadTile[16];
 // one 8x8 tile at 0xa3: asphalt carrying a dash of the lane's center line
 extern const uint8_t kRoadStripeTile[16];
 
+// one 8x8 tile at 0xa4: pale water rippled with dark waves, drawn 2x2 to fill a 16 px cell
+extern const uint8_t kWaterTile[16];
+
+// one 8x8 sprite at 0xc4: a dark slab of log, drawn three across to make one 24x8 log
+extern const uint8_t kLogTile[16];
+
 // two 8x8 sprites at 0xc0: the front then the rear half of one 16x8 car
 extern const uint8_t kCarTiles[32];
 

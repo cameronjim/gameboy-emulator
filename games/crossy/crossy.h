@@ -24,6 +24,12 @@
 #define kTreeTileId 0xA1U
 #define kRoadTileId 0xA2U
 #define kRoadStripeTileId 0xA3U
+#define kWaterTileId 0xA4U
+
+// a lane is one of three kinds; the kind is cached per ring slot
+#define kLaneGrass 0U
+#define kLaneRoad 1U
+#define kLaneWater 2U
 
 // gbdk's ibm font lands ascii 0x20-0x7f on tiles 0x00-0x5f
 #define kFontFirstChar 0x20U
@@ -57,25 +63,33 @@
 
 // the chick is one 8x8 sprite centered in its 16 px cell
 #define kChickCellInset 4U
-#define kChickCenterInset 8U
+#define kChickHalfPx 4U
+// on water the chick takes the lane's top half, clear of the log's scanlines entirely
+#define kChickWaterInset 0U
 #define kChickSpawnCol 4U
 // on the title the chick stands one cell lower, clear of the BEST line
 #define kHoverChickScreenY 116U
 // oam coords are offset by 8,16 from the screen
 #define kOamXOffset 8U
 #define kOamYOffset 16U
+#define kSpritePx 8U
 
 // a hop slides 16 px over 8 frames
 #define kHopSlidePx 16
 #define kHopStepPx 2
+// one cell of travel in the chick's 8.8 pixel x
+#define kCellFixed 0x1000U
 
 // generation: the first lanes are plain so the run always starts clear
 #define kPlainLanes 3U
 #define kMaxTreesPerLane 4U
-// lanes come in alternating chunks; roads carry cars and never carry trees
+// lanes alternate grass with a danger chunk; danger lanes never carry trees
 #define kRoadChunkMin 1U
 #define kRoadChunkSpan 3U
-// two grass lanes minimum keeps visible road lanes at six, inside the oam budget
+// water clusters tighter than road: three logs a mover is twice the sprite cost
+#define kWaterChunkMin 1U
+#define kWaterChunkSpan 2U
+// two grass lanes minimum keeps the visible danger lanes inside the oam budget
 #define kGrassChunkMin 2U
 #define kGrassChunkSpan 2U
 // the guaranteed-open column wanders at most two columns and never hugs an edge
@@ -87,6 +101,8 @@
 // lcg full period mod 256: multiplier is 1 mod 4 and the increment is odd
 #define kRngMul 37U
 #define kRngAdd 1U
+// bit 7 runs the lcg's full period; bit 0 merely alternates
+#define kRngTopBit 0x80U
 
 // hud: three digit sprites top-center, oam coords offset by 8,16 from the screen
 #define kChickSprite 0U
@@ -97,26 +113,46 @@
 #define kDigitWidthPx 8U
 #define kScoreMax 999U // three digit sprites is all the hud can show
 
-// cars: 16 px of two 8x8 sprites, y centered in their lane
+// movers: cars and logs ride one 256 px wrapping track per lane, y centered in the lane
+#define kMoverLaneInset 4U
+// two movers share a lane's speed half a lap apart, so their gap never closes
+#define kMoversPerLane 2U
+#define kMoverPhase 0x8000U
+// the track doubles as oam x, so a mover slides off either edge before it wraps
+#define kMoverDrawLimit 176U
+// worst case in nine visible lanes is five water lanes: water chunks cap at 2, grass at 2
+#define kMoverFirstSprite 4U
+#define kMoverSprites 30U
+// 34 of 40 oam, and a water lane's 6 log parts plus 3 hud digits plus the chick is the dmg's 10
+// so the hud stays at screen y 8, where only the top lane's movers ever share its scanlines
+
+// cars: 16 px of two 8x8 sprites in tile id order
 #define kCarTileId 0xC0U
 #define kCarTileCount 2U
-#define kCarLaneInset 4U
+#define kCarSprites 2U
 #define kCarHalfPx 8U
-// two cars share a lane's speed on a 256 px wrapping track, so their gap never closes
-#define kCarsPerLane 2U
-#define kCarPhase 0x8000U
 // 8.8 px per frame: 0.5 to 1.0 in five steps
 #define kCarSpeedMin 128U
 #define kCarSpeedStep 32U
 #define kCarSpeedSteps 5U
-// oam x is the track position, so a car slides off either edge before it wraps
-#define kCarDrawLimit 176U
 // centers closer than this collide: 8 px of car plus 4 px of chick, minus a little mercy
 #define kCarHitPx 10
-// six road lanes can share the screen: 24 sprites past the chick and the hud
-#define kCarFirstSprite 4U
-#define kCarSprites 24U
-#define kCarSpritesPerLane 4U
+
+// logs: 24 px of three 8x8 sprites, all the same tile
+#define kLogTileId 0xC4U
+#define kLogTileCount 1U
+#define kLogSprites 3U
+#define kLogHalfPx 12U
+// the lane's lower half: dmg's lower oam x wins, so a log level with the chick would bury its rider
+#define kLogLaneInset 8U
+// 8.8 px per frame: 0.41 to 0.78 in four steps, every one a whole 32nd of a pixel
+#define kLogSpeedMin 104U
+#define kLogSpeedStep 32U
+#define kLogSpeedSteps 4U
+// the chick rides while its center is within 12 px of a log's
+#define kLogRidePx 12
+// 8.8 left x 152, so the chick's center reaches 156: the last px a ride survives
+#define kRideMaxFixed 0x9800U
 
 // game over popup: a band of bg cells over the frozen world, no window layer involved
 #define kPopupTopRow 5U // rows 5..11 of 18 center the four text lines

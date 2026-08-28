@@ -2,13 +2,15 @@
 
 #include "assets.h"
 #include "crossy.h"
+#include "movers.h"
 #include "terrain.h"
 
 #include <gb/gb.h>
 #include <stdint.h>
 
 static uint16_t lane;
-static uint8_t col;
+// 8.8 screen x of the sprite's left edge; a ride leaves it between grid columns
+static uint16_t px_x;
 // px still owed on the current hop; only one of the three is ever nonzero
 static int8_t slide_x;
 static int8_t slide_y;
@@ -16,6 +18,21 @@ static uint8_t slide_scy;
 
 static uint8_t hopping(void) {
     return (slide_x != 0 || slide_y != 0 || slide_scy != 0U) ? 1U : 0U;
+}
+
+static uint8_t left_px(void) {
+    return (uint8_t)(px_x >> 8);
+}
+
+// the grid cell the chick's center sits in
+static uint8_t cur_col(void) {
+    uint16_t c = (uint16_t)(((uint16_t)(px_x >> 8) + kChickHalfPx) >> 4);
+
+    return c > kMaxCol ? kMaxCol : (uint8_t)c;
+}
+
+static uint16_t col_px(uint8_t c) {
+    return (uint16_t)((uint16_t)((uint8_t)((uint8_t)(c << 4) + kChickCellInset)) << 8);
 }
 
 static int8_t step_toward_zero(int8_t v) {
@@ -28,12 +45,20 @@ static int8_t step_toward_zero(int8_t v) {
     return 0;
 }
 
+// dry land snaps the chick back to the grid; water keeps the pixel x for a log to log hop
+static void land_on(uint16_t next) {
+    if (!terrain_is_water(next)) {
+        px_x = col_px(cur_col());
+    }
+}
+
 static void hop_forward(void) {
     uint16_t next = (uint16_t)(lane + 1U);
 
-    if (terrain_blocked(next, col)) {
+    if (terrain_blocked(next, cur_col())) {
         return;
     }
+    land_on(next);
     lane = next;
     if (next > terrain_cam_lane()) {
         // the camera keeps pace, so the chick holds its screen row while the world slides
@@ -55,32 +80,38 @@ static void hop_back(void) {
     if ((uint16_t)(terrain_cam_lane() - next) > kMaxLanesBehind) {
         return;
     }
-    if (terrain_blocked(next, col)) {
+    if (terrain_blocked(next, cur_col())) {
         return;
     }
+    land_on(next);
     lane = next;
     slide_y = -kHopSlidePx;
 }
 
 static void hop_left(void) {
-    if (col == 0U || terrain_blocked(lane, (uint8_t)(col - 1U))) {
+    uint8_t c = cur_col();
+
+    if (c == 0U || terrain_blocked(lane, (uint8_t)(c - 1U))) {
         return;
     }
-    --col;
+    // a ride is pixel continuous, so a side hop moves 16 px from wherever the log left the chick
+    px_x = terrain_is_water(lane) ? (uint16_t)(px_x - kCellFixed) : col_px((uint8_t)(c - 1U));
     slide_x = kHopSlidePx;
 }
 
 static void hop_right(void) {
-    if (col >= kMaxCol || terrain_blocked(lane, (uint8_t)(col + 1U))) {
+    uint8_t c = cur_col();
+
+    if (c >= kMaxCol || terrain_blocked(lane, (uint8_t)(c + 1U))) {
         return;
     }
-    ++col;
+    px_x = terrain_is_water(lane) ? (uint16_t)(px_x + kCellFixed) : col_px((uint8_t)(c + 1U));
     slide_x = -kHopSlidePx;
 }
 
 void chick_init(void) {
     lane = 0;
-    col = kChickSpawnCol;
+    px_x = col_px(kChickSpawnCol);
     slide_x = 0;
     slide_y = 0;
     slide_scy = 0;
@@ -117,10 +148,26 @@ void chick_update(uint8_t pressed) {
     terrain_apply_scy(slide_scy);
 }
 
+uint8_t chick_afloat(void) {
+    int16_t step;
+
+    // a hop is airborne, so the water only judges the chick once it lands
+    if (hopping() || !terrain_is_water(lane)) {
+        return 1;
+    }
+    if (!movers_log_ride(lane, chick_center_x(), &step)) {
+        return 0;
+    }
+    px_x = (uint16_t)(px_x + (uint16_t)step);
+    // px_x wraps near 0xffff once a log drags the chick left of the screen, so one test covers both edges
+    return px_x <= kRideMaxFixed ? 1U : 0U;
+}
+
 void chick_draw(void) {
     uint8_t behind = (uint8_t)(terrain_cam_lane() - lane);
-    uint8_t x = (uint8_t)((uint8_t)(col << 4) + kChickCellInset + (uint8_t)slide_x);
-    uint8_t y = (uint8_t)(kCamLaneScreenY + (uint8_t)(behind << 4) + kChickCellInset + (uint8_t)slide_y);
+    uint8_t inset = terrain_is_water(lane) ? kChickWaterInset : kChickCellInset;
+    uint8_t x = (uint8_t)(left_px() + (uint8_t)slide_x);
+    uint8_t y = (uint8_t)(kCamLaneScreenY + (uint8_t)(behind << 4) + inset + (uint8_t)slide_y);
 
     move_sprite(kChickSprite, (uint8_t)(x + kOamXOffset), (uint8_t)(y + kOamYOffset));
     set_sprite_tile(kChickSprite, hopping() ? kChickHopTileId : kChickTileId);
@@ -136,5 +183,5 @@ uint16_t chick_lane(void) {
 }
 
 uint8_t chick_center_x(void) {
-    return (uint8_t)((uint8_t)((uint8_t)(col << 4) + kChickCenterInset) + (uint8_t)slide_x);
+    return (uint8_t)((uint8_t)(left_px() + kChickHalfPx) + (uint8_t)slide_x);
 }

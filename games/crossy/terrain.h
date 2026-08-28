@@ -12,6 +12,9 @@ uint8_t terrain_blocked(uint16_t lane, uint8_t col);
 // 1 when that lane is asphalt: no trees, but traffic
 uint8_t terrain_is_road(uint16_t lane);
 
+// 1 when that lane is open water: no trees, and nothing to stand on but a log
+uint8_t terrain_is_water(uint16_t lane);
+
 // screen y of the lane's top row, taken from scy so a hop's slide is included
 uint8_t terrain_lane_screen_y(uint16_t lane);
 

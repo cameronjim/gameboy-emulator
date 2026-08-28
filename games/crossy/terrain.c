@@ -1,8 +1,8 @@
 #include "terrain.h"
 
 #include "assets.h"
-#include "cars.h"
 #include "crossy.h"
+#include "movers.h"
 
 #include <gb/gb.h>
 #include <stdint.h>
@@ -13,9 +13,9 @@ static const uint16_t kColBit[kGridCols] = {1U, 2U, 4U, 8U, 16U, 32U, 64U, 128U,
 static uint8_t rng_state;
 // lane records cached per ring slot, so a streamed row never re-rolls the rng
 static uint16_t lane_trees[kRingLanes];
-static uint8_t lane_road[kRingLanes];
+static uint8_t lane_kind[kRingLanes];
 // lanes come out in chunks; these carry the run of the chunk being generated
-static uint8_t chunk_road;
+static uint8_t chunk_kind;
 static uint8_t chunk_left;
 // guaranteed-open column of the last lane generated
 static uint8_t prev_gap;
@@ -46,22 +46,30 @@ static uint8_t next_gap(void) {
     return (uint8_t)g;
 }
 
-// the chunks alternate, so lanes 0..2 count as the run's opening grass chunk
+// grass and danger chunks alternate, so lanes 0..2 count as the run's opening grass chunk
 static uint8_t next_kind(void) {
     if (chunk_left == 0U) {
-        chunk_road = (uint8_t)(chunk_road ^ 1U);
-        chunk_left = chunk_road ? (uint8_t)(kRoadChunkMin + rng_next() % kRoadChunkSpan)
-                                : (uint8_t)(kGrassChunkMin + rng_next() % kGrassChunkSpan);
+        if (chunk_kind != kLaneGrass) {
+            chunk_kind = kLaneGrass;
+            chunk_left = (uint8_t)(kGrassChunkMin + rng_next() % kGrassChunkSpan);
+        } else if ((rng_next() & kRngTopBit) != 0U) {
+            // this lcg's low bit flips every call, so the coin toss reads its top one
+            chunk_kind = kLaneWater;
+            chunk_left = (uint8_t)(kWaterChunkMin + (uint8_t)(rng_next() >> 4) % kWaterChunkSpan);
+        } else {
+            chunk_kind = kLaneRoad;
+            chunk_left = (uint8_t)(kRoadChunkMin + rng_next() % kRoadChunkSpan);
+        }
     }
     --chunk_left;
-    return chunk_road;
+    return chunk_kind;
 }
 
 static void generate_lane(uint16_t lane) {
     uint8_t slot = (uint8_t)(lane & kRingLaneMask);
     uint16_t trees = 0;
     uint8_t g = prev_gap;
-    uint8_t road = 0;
+    uint8_t kind = kLaneGrass;
     uint8_t lo;
     uint8_t hi;
     uint8_t n;
@@ -75,11 +83,11 @@ static void generate_lane(uint16_t lane) {
     hi = (g < prev_gap) ? prev_gap : g;
 
     if (lane >= kPlainLanes) {
-        road = next_kind();
+        kind = next_kind();
     }
-    if (road != 0U) {
-        // a road lane is always crossable ground; its danger is the traffic
-        cars_lane_init(slot);
+    if (kind != kLaneGrass) {
+        // asphalt and open water are both clear ground; their danger is what slides along them
+        movers_lane_init(slot, (uint8_t)(kind == kLaneWater));
     } else if (lane >= kPlainLanes) {
         n = (uint8_t)(rng_next() % (kMaxTreesPerLane + 1U));
         for (i = 0; i < n; ++i) {
@@ -94,7 +102,7 @@ static void generate_lane(uint16_t lane) {
 
     prev_gap = g;
     lane_trees[slot] = trees;
-    lane_road[slot] = road;
+    lane_kind[slot] = kind;
 }
 
 static void draw_lane(uint16_t lane) {
@@ -106,7 +114,7 @@ static void draw_lane(uint16_t lane) {
 
     for (c = 0; c < kGridCols; ++c) {
         x = (uint8_t)(c << 1);
-        if (lane_road[slot] != 0U) {
+        if (lane_kind[slot] == kLaneRoad) {
             // one dash per cell: the stripe tile carries the center line's bottom rows
             lane_buf[x] = kRoadStripeTileId;
             lane_buf[x + 1U] = kRoadTileId;
@@ -114,7 +122,11 @@ static void draw_lane(uint16_t lane) {
             lane_buf[kScreenCols + x + 1U] = kRoadTileId;
             continue;
         }
-        t = (trees & kColBit[c]) != 0U ? kTreeTileId : kGrassTileId;
+        if (lane_kind[slot] == kLaneWater) {
+            t = kWaterTileId;
+        } else {
+            t = (trees & kColBit[c]) != 0U ? kTreeTileId : kGrassTileId;
+        }
         lane_buf[x] = t;
         lane_buf[x + 1U] = t;
         lane_buf[kScreenCols + x] = t;
@@ -143,17 +155,18 @@ void terrain_init(uint8_t seed) {
     prev_gap = kChickSpawnCol;
     cam_lane = 0;
     gen_next = 0;
-    chunk_road = 0;
+    chunk_kind = kLaneGrass;
     chunk_left = 0;
 
     set_bkg_data(kGrassTileId, 1, kGrassTile);
     set_bkg_data(kTreeTileId, 1, kTreeTile);
     set_bkg_data(kRoadTileId, 1, kRoadTile);
     set_bkg_data(kRoadStripeTileId, 1, kRoadStripeTile);
+    set_bkg_data(kWaterTileId, 1, kWaterTile);
 
     for (i = 0; i < kRingLanes; ++i) {
         lane_trees[i] = 0;
-        lane_road[i] = 0;
+        lane_kind[i] = kLaneGrass;
     }
 
     SCX_REG = 0;
@@ -171,7 +184,11 @@ uint8_t terrain_blocked(uint16_t lane, uint8_t col) {
 }
 
 uint8_t terrain_is_road(uint16_t lane) {
-    return lane_road[lane & kRingLaneMask];
+    return lane_kind[lane & kRingLaneMask] == kLaneRoad ? 1U : 0U;
+}
+
+uint8_t terrain_is_water(uint16_t lane) {
+    return lane_kind[lane & kRingLaneMask] == kLaneWater ? 1U : 0U;
 }
 
 uint8_t terrain_lane_screen_y(uint16_t lane) {

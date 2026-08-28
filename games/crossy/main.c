@@ -1,7 +1,7 @@
-#include "cars.h"
 #include "chick.h"
 #include "crossy.h"
 #include "hud.h"
+#include "movers.h"
 #include "save.h"
 #include "terrain.h"
 
@@ -84,7 +84,7 @@ static void draw_title(void) {
     format_value("BEST", save_best());
     print_centered(kBestTextY, line);
     hud_hide();
-    cars_hide();
+    movers_hide();
     chick_hover();
 }
 
@@ -99,8 +99,8 @@ static void enter_play(uint8_t seed) {
     // lcd off so cls and the ring fill cannot land mid-scanline
     DISPLAY_OFF;
     cls();
-    // cars first: generating a road lane rolls that lane's traffic
-    cars_init(seed);
+    // movers first: generating a danger lane rolls that lane's traffic
+    movers_init(seed);
     terrain_init(seed);
     chick_init();
     hud_init();
@@ -150,7 +150,7 @@ static void stage_popup(void) {
 
 static void enter_over(uint16_t score) {
     chick_hide();
-    cars_hide();
+    movers_hide();
     save_record(score);
     // a mid hop death leaves scy between lanes, so snap it before the band is placed
     terrain_apply_scy(0);
@@ -164,6 +164,7 @@ void main(void) {
     uint8_t pressed = 0;
     uint8_t over_frames = 0;
     uint8_t hover_frames = 0;
+    uint8_t afloat = 1;
     uint16_t score = 0;
     uint16_t shown = 0;
 
@@ -211,7 +212,9 @@ void main(void) {
 
         // the only bg write of the run happens here, inside vblank
         chick_update(pressed);
-        cars_update();
+        movers_update();
+        // after the logs have moved, so the chick takes the very same 8.8 step they did
+        afloat = chick_afloat();
         chick_draw();
         if (chick_lane() > score) {
             score = chick_lane();
@@ -220,7 +223,7 @@ void main(void) {
             shown = score;
             hud_draw(score);
         }
-        if (cars_hit(chick_lane(), chick_center_x())) {
+        if (!afloat || movers_car_hit(chick_lane(), chick_center_x())) {
             enter_over(score);
             over_frames = 0;
             state = kStateOver;
