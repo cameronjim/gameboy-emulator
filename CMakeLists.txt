@@ -115,8 +115,26 @@ if(GBDK_HOME AND EXISTS "${GB_LCC}")
     target_link_libraries(flappy_tests PRIVATE gbcore Catch2::Catch2WithMain)
     add_dependencies(flappy_tests flappy)
     catch_discover_tests(flappy_tests)
+    # milestone 16: second gbdk rom, same mbc1+ram+battery cart shape as flappy
+    set(GB_CROSSY_ROM ${CMAKE_BINARY_DIR}/crossy.gb)
+    add_custom_command(
+        OUTPUT ${GB_CROSSY_ROM}
+        COMMAND ${GB_LCC} -Wm-yt0x03 -Wm-ya1 -Wm-ynCROSSY -o ${GB_CROSSY_ROM}
+                ${CMAKE_SOURCE_DIR}/games/crossy/main.c
+        DEPENDS games/crossy/main.c games/crossy/crossy.h
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMENT "building crossy.gb with gbdk lcc"
+        VERBATIM)
+    add_custom_target(crossy DEPENDS ${GB_CROSSY_ROM})
+
+    add_executable(crossy_tests games/crossy/tests/crossy_test.cpp)
+    target_compile_options(crossy_tests PRIVATE ${GB_WARNING_FLAGS})
+    target_compile_definitions(crossy_tests PRIVATE CROSSY_ROM_PATH="${GB_CROSSY_ROM}")
+    target_link_libraries(crossy_tests PRIVATE gbcore Catch2::Catch2WithMain)
+    add_dependencies(crossy_tests crossy)
+    catch_discover_tests(crossy_tests)
 else()
-    message(WARNING "gbdk not found (set GBDK_HOME); skipping flappy rom target")
+    message(WARNING "gbdk not found (set GBDK_HOME); skipping flappy/crossy rom targets")
 endif()
 
 add_executable(gbrom_harness tests/roms/harness.cpp)
