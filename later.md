@@ -60,3 +60,7 @@ out-of-scope items noticed during milestones, per claude.md rule 8.
   same either way round. a cut end grain ring would need a third tile pair.
 - crossy: 8x16 sprites cost twice the tile budget, so the sprite bank now runs
   0xb0-0xe3. only 0xba-0xbb, 0xdc-0xdf and 0xe4+ are left for new art.
+- crossy: aligning run_frame to the vblank edge shifted the free running frame
+  counter the seed is sampled from, so every pinned enter_world wait landed in a
+  different world and the whole seed table had to be re-searched. any future
+  change to what a frame costs will move them again.

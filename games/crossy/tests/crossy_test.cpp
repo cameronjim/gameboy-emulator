@@ -1990,7 +1990,8 @@ TEST_CASE("water_appears_and_reads_distinct") {
 }
 
 // the seeds whose first danger chunk is one water lane, then two of them
-constexpr uint32_t kLoneWaterWait = 5;
+// the lone one moved once run_frame returned on the vblank edge: wait 5 now opens with a pair
+constexpr uint32_t kLoneWaterWait = 6;
 constexpr uint32_t kTwoWaterWait = 7;
 
 TEST_CASE("water_lanes_alternate_shade") {
@@ -2104,9 +2105,10 @@ TEST_CASE("chick_visible_while_riding") {
 }
 
 // the seeds whose first danger chunk is a road of one, two and three lanes
-constexpr uint32_t kOneRoadWait = 13;
-constexpr uint32_t kTwoRoadWait = 1;
-constexpr uint32_t kThreeRoadWait = 0;
+// all three moved with the vblank edge: 13 now opens with three lanes, 1 with one, 0 with two
+constexpr uint32_t kOneRoadWait = 12;
+constexpr uint32_t kTwoRoadWait = 14;
+constexpr uint32_t kThreeRoadWait = 13;
 
 TEST_CASE("road_dashes_only_between_lanes") {
     const std::vector<uint8_t> rom = read_crossy_rom();
@@ -2192,7 +2194,8 @@ TEST_CASE("logs_ride_a_shorter_lap") {
     const std::vector<uint8_t> rom = read_crossy_rom();
 
     // the wait for a log is the lap between its two halves, so a shorter lap is a shorter wait
-    for (uint32_t world_wait : {5u, 7u, 9u}) {
+    // 9 slid onto a world whose lane hides a log behind the right edge, so 20 stands in for it
+    for (uint32_t world_wait : {5u, 7u, 20u}) {
         gb::Gameboy gameboy;
         enter_world(gameboy, rom, world_wait);
 
@@ -2492,7 +2495,9 @@ TEST_CASE("difficulty_ramps_car_speed") {
 
     // fixed worlds whose deep road lanes roll fast; the opening ones cannot, whatever they roll
     // re-searched again once the seed moved to hover entry: every world changed
-    for (uint32_t world_wait : {1u, 3u, 14u, 18u}) {
+    // and once more for the vblank edge: 3 lost its deep road, so 2 takes its place
+    // 2 and 14 open at the tier 0 ceiling exactly, so the opening half of the claim stays tight
+    for (uint32_t world_wait : {1u, 2u, 14u, 18u}) {
         gb::Gameboy gameboy;
         enter_world(gameboy, rom, world_wait);
 
@@ -2533,7 +2538,8 @@ TEST_CASE("tracks_appear") {
     const std::vector<uint8_t> rom = read_crossy_rom();
 
     // fixed worlds the autopilot walks onto a track in
-    for (uint32_t world_wait : {2u, 16u, 17u}) {
+    // the vblank edge left 17 with no track inside 60 steps, so 18 takes its place
+    for (uint32_t world_wait : {2u, 16u, 18u}) {
         gb::Gameboy gameboy;
         enter_world(gameboy, rom, world_wait);
 
@@ -2777,8 +2783,9 @@ TEST_CASE("autopilot_crosses_tracks") {
     const std::vector<uint8_t> rom = read_crossy_rom();
 
     // fixed worlds whose deep lanes hold tracks, crossed on a proven quiet light every time
+    // the vblank edge emptied 3, 4 and 7 of rails inside 20 lanes, so 2, 5 and 6 stand in
     int total = 0;
-    for (uint32_t world_wait : {1u, 3u, 4u, 7u, 8u, 10u}) {
+    for (uint32_t world_wait : {1u, 2u, 5u, 6u, 8u, 10u}) {
         gb::Gameboy gameboy;
         enter_world(gameboy, rom, world_wait);
 
