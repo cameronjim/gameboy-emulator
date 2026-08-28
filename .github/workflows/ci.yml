@@ -35,7 +35,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: install clang-format
-        run: sudo apt-get update && sudo apt-get install -y clang-format
+        # pinned to the version developers run locally; apt's moves with the distro
+        run: pip install clang-format==23.1.0
       - name: format check
         run: |
           find core frontend tests games \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name '*.h' \) -print0 |
