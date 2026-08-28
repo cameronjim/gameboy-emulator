@@ -97,10 +97,14 @@ Run from a terminal to use these:
 a real Game Boy rom that happens to be born on this emulator. Launch it like
 any game (`gbemu-sdl.exe flappy.gb` or drag the file onto the exe).
 
+- The title screen previews the actual course: the first pipe you'll face
+  waits at the right edge while the bird hovers.
 - `F` or `Space` flaps (and starts the round — the run begins on your first
   flap, so you set the pace).
 - Pass a pipe for a point; touch a pipe or the ground and it's over.
 - Your best score saves automatically (battery save, `.sav` file).
+- The emulator recognizes the cart and dresses it in Super Mario colors:
+  blue sky, green pipes, brick ground, yellow bird.
 
 To build the rom yourself, install [gbdk-2020](https://github.com/gbdk-2020/gbdk-2020)
 and configure with `-DGBDK_HOME=<path>`; the `flappy` target and its emulator
