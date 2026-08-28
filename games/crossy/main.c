@@ -245,6 +245,10 @@ void main(void) {
             eagle_summon();
         }
         taken = eagle_update(chick_center_x(), chick_screen_y());
+        // dmg draws ten sprites a line; the swoop's two beside a train's six leave the digits no room
+        if (eagle_active()) {
+            hud_hide();
+        }
         drowned = (uint8_t)(!eagle_active() && !afloat);
         struck = (uint8_t)(!eagle_active() && (movers_car_hit(chick_lane(), chick_center_x()) ||
                                                terrain_train_hit(chick_lane(), chick_center_x())));

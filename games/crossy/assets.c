@@ -13,6 +13,18 @@ const uint8_t kGrassTile[16] = {
     0x14, 0x00, // ...1.1..
 };
 
+// the odd lane's grass: the same sprigs shifted and one shade down, so the boundary is visible
+const uint8_t kGrassAltTile[16] = {
+    0x00, 0x08, // ....2...
+    0x00, 0x14, // ...2.2..
+    0x00, 0x00, // ........
+    0x00, 0x42, // .2....2.
+    0x00, 0x88, // 2...2...
+    0x00, 0x00, // ........
+    0x00, 0x02, // ......2.
+    0x00, 0x05, // .....2.2
+};
+
 const uint8_t kTreeTile[16] = {
     0xFF, 0xFF, // 33333333
     0xB6, 0xFF, // 32332332
@@ -115,7 +127,7 @@ const uint8_t kCarTiles[32] = {
     0x00, 0x00, // ........
 };
 
-// one 32x8 train as four tiles in id order; every pixel is opaque, so the sweep is one solid block
+// the train's four tiles: nose, two carriages, tail; every pixel is opaque, so the sweep is solid
 const uint8_t kTrainTiles[64] = {
     0xFF, 0xFF, // 33333333
     0x80, 0xFF, // 32222222

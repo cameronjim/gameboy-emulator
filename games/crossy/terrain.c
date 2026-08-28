@@ -172,8 +172,11 @@ static void draw_lane(uint16_t lane) {
         }
         if (lane_kind[slot] == kLaneWater) {
             t = kWaterTileId;
+        } else if ((trees & kColBit[c]) != 0U) {
+            t = kTreeTileId;
         } else {
-            t = (trees & kColBit[c]) != 0U ? kTreeTileId : kGrassTileId;
+            // even lanes take one grass tile and odd lanes the other, so every boundary is drawn
+            t = (lane & 1U) != 0U ? kGrassAltTileId : kGrassTileId;
         }
         lane_buf[x] = t;
         lane_buf[x + 1U] = t;
@@ -186,11 +189,13 @@ static void draw_lane(uint16_t lane) {
 // a fresh ring holds nothing but grass, so no cell can ever show a stale tile
 static void fill_ring_with_grass(void) {
     uint8_t i;
+    uint8_t c;
 
-    for (i = 0; i < 2U * kScreenCols; ++i) {
-        lane_buf[i] = kGrassTileId;
-    }
     for (i = 0; i < kRingLanes; ++i) {
+        // a slot's parity is its lane's, so the fill alternates exactly as the real lanes will
+        for (c = 0; c < 2U * kScreenCols; ++c) {
+            lane_buf[c] = (i & 1U) != 0U ? kGrassAltTileId : kGrassTileId;
+        }
         set_bkg_tiles(0, (uint8_t)(i << 1), kScreenCols, 2, lane_buf);
     }
 }
@@ -208,6 +213,7 @@ void terrain_init(uint8_t seed) {
     chunk_left = 0;
 
     set_bkg_data(kGrassTileId, 1, kGrassTile);
+    set_bkg_data(kGrassAltTileId, 1, kGrassAltTile);
     set_bkg_data(kTreeTileId, 1, kTreeTile);
     set_bkg_data(kRoadTileId, 1, kRoadTile);
     set_bkg_data(kRoadStripeTileId, 1, kRoadStripeTile);

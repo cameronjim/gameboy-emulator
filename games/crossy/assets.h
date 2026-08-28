@@ -6,6 +6,9 @@
 // one 8x8 tile at 0xa0: pale grass with sprigs, drawn 2x2 to fill a 16 px cell
 extern const uint8_t kGrassTile[16];
 
+// one 8x8 tile at 0xa7: the odd lane's grass, dappled a shade darker than the even lane's
+extern const uint8_t kGrassAltTile[16];
+
 // one 8x8 tile at 0xa1: dark mottled canopy, drawn 2x2 to fill a 16 px cell
 extern const uint8_t kTreeTile[16];
 
@@ -27,7 +30,7 @@ extern const uint8_t kRailWarnTile[16];
 // one 8x8 sprite at 0xc4: a dark slab of log, drawn three across to make one 24x8 log
 extern const uint8_t kLogTile[16];
 
-// four 8x8 sprites at 0xc8: nose, two carriages and tail of one solid 32x8 train
+// four 8x8 sprites at 0xc8: nose, two carriages and tail; the carriages repeat across a 48x8 train
 extern const uint8_t kTrainTiles[64];
 
 // two 8x8 sprites at 0xc0: the front then the rear half of one 16x8 car
