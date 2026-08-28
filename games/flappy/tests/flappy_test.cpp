@@ -419,7 +419,7 @@ TEST_CASE("hover_shows_best") {
     REQUIRE(gameboy.load_rom(rom));
     run(gameboy, kBootFrames);
     // the prompt names the flap key and the line under it reads best 0 on fresh sram
-    REQUIRE(row_has_tile(gameboy, kPromptRow, font_tile('F')));
+    REQUIRE(row_has_tile(gameboy, kPromptRow, font_tile('S')));
     REQUIRE(row_has_tile(gameboy, kBestRow, font_tile('B')));
     REQUIRE(row_has_tile(gameboy, kBestRow, font_tile('0')));
     REQUIRE_FALSE(row_has_nonzero_digit(gameboy, kBestRow));
@@ -652,17 +652,21 @@ TEST_CASE("hitting_a_pipe_ends_the_run") {
     REQUIRE(killed_at < kGroundTopPx / 2);
 }
 
-// searched locally against this rom with a lookahead autopilot; frame 0 is the start press itself
-// re-search after any rom change: the gap seed is div at world_init
-constexpr std::array<uint32_t, 10> kSurvivingFlaps = {0, 32, 38, 44, 50, 81, 111, 118, 153, 193};
+// searched locally with a lookahead autopilot; frame 0 is the start press itself.
+// the gap rng seeds off the hover frame count, so these stay valid across rom
+// changes as long as the pre-start flow timing is unchanged
+constexpr std::array<uint32_t, 17> kSurvivingFlaps = {0,   44,  48,  80,  110, 117, 152, 157, 169,
+                                                      173, 177, 181, 185, 189, 219, 223, 256};
 
 // the same search carried out to score 14, for the hud and difficulty tests
-constexpr std::array<uint32_t, 53> kLongScript = {
-    0,   32,  38,  44,   50,   81,   111,  118,  153,  193,  222,  252,  292,  311,  346,  361,  392, 405,
-    442, 457, 486, 500,  537,  560,  592,  600,  635,  674,  693,  729,  763,  792,  823,  828,  862, 892,
-    922, 952, 983, 1013, 1033, 1062, 1093, 1124, 1140, 1177, 1187, 1193, 1221, 1252, 1286, 1294, 1330};
-// the long script clears its fourteenth pipe at this frame and stops flapping soon after
-constexpr uint32_t kLongScriptFrames = 1360;
+constexpr std::array<uint32_t, 74> kLongScript = {
+    0,    44,   48,   80,   110,  117,  152,  157,  169,  173,  177,  181,  185,  189,  219,
+    223,  256,  298,  310,  346,  379,  410,  414,  447,  484,  501,  537,  553,  583,  596,
+    633,  649,  653,  657,  661,  693,  697,  731,  765,  795,  798,  830,  875,  879,  885,
+    921,  951,  981,  985,  1019, 1033, 1037, 1067, 1071, 1104, 1110, 1114, 1118, 1122, 1142,
+    1175, 1226, 1229, 1261, 1265, 1269, 1273, 1277, 1281, 1285, 1289, 1293, 1296, 1331};
+// the long script clears its fourteenth pipe just before this frame
+constexpr uint32_t kLongScriptFrames = 1340;
 
 TEST_CASE("a_scripted_run_survives_the_first_pipe") {
     const std::vector<uint8_t> rom = read_flappy_rom();
@@ -862,7 +866,7 @@ TEST_CASE("game_over_popup_is_centered_and_solid") {
     REQUIRE(above);
     REQUIRE(below);
 
-    for (char c : std::string("GAMEOVRSCBPNYK")) {
+    for (char c : std::string("GAMEOVRSCBTPY")) {
         REQUIRE(bg_has_tile(gameboy, popup_tile(c)));
     }
     // the bird may have died right where the popup sits, so it is parked offscreen
@@ -1089,4 +1093,55 @@ TEST_CASE("difficulty_ramps") {
     REQUIRE(early < 1.1);
     REQUIRE(late > early + 0.15);
     REQUIRE(late < 1.4);
+}
+
+namespace {
+
+// leftmost and rightmost bg cell columns on a tile row whose id is in [lo, hi]
+std::pair<int, int> glyph_span(const gb::Gameboy& gameboy, uint32_t row, uint8_t lo, uint8_t hi) {
+    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
+    int left = -1;
+    int right = -1;
+    for (uint32_t cx = 0; cx < 20; ++cx) {
+        const uint16_t id = ids[(row * 8 + 3) * gb::kLcdWidth + cx * 8 + 3];
+        if ((id & 0x100u) != 0) {
+            continue;
+        }
+        const uint8_t tile = static_cast<uint8_t>(id);
+        if (tile >= lo && tile <= hi) {
+            if (left < 0) {
+                left = static_cast<int>(cx);
+            }
+            right = static_cast<int>(cx);
+        }
+    }
+    return {left, right};
+}
+
+} // namespace
+
+TEST_CASE("hover_and_popup_text_are_centered") {
+    const std::vector<uint8_t> rom = read_flappy_rom();
+
+    gb::Gameboy gameboy;
+    REQUIRE(gameboy.load_rom(rom));
+    run(gameboy, kBootFrames);
+    // even-length lines land symmetric around the 20 column grid: left + right == 19
+    for (size_t row : {kTitleRow, kPromptRow, kBestRow}) {
+        const auto [left, right] = glyph_span(gameboy, row, 0x01, 0x5F);
+        REQUIRE(left >= 0);
+        REQUIRE(left + right == 19);
+    }
+
+    // die via the short script, then the snapped scroll centers the popup prompt too
+    press(gameboy, gb::Button::Start, 2);
+    run(gameboy, kEnterPlayFrames);
+    for (uint32_t frame = 0; frame < 500 && alive(gameboy); ++frame) {
+        script_frame(gameboy, frame);
+    }
+    run(gameboy, 12);
+    // popup prompt sits on screen row 10 (band row 5 of the band at rows 5..11)
+    const auto [left, right] = glyph_span(gameboy, 10, kInvFontFirstTile + 1, kInvFontLastTile);
+    REQUIRE(left >= 0);
+    REQUIRE(left + right == 19);
 }
