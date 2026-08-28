@@ -14,3 +14,13 @@ out-of-scope items noticed during milestones, per claude.md rule 8.
 - crossy: only stacked water lanes are forced to alternate direction. stacked
   road lanes can still share a direction and speed, which is harmless for
   dodging but makes some road chunks read as one wide lane.
+- crossy: a track lane's quiet/warning/train cycle only ticks while the lane is
+  on screen, so a track can scroll into view already mid-warning. keeping the
+  per-frame work o(visible lanes) was worth that.
+- crossy: two track lanes warning on the same frame ring one bell, not two,
+  because terrain_tick_tracks folds every visible lane's bell into one flag.
+- crossy: every track's warning light sits in the same map column (10). a
+  per-lane light column would need another cached byte per ring slot.
+- crossy: adding tracks changed the rng draw count from lane 15 on, so the
+  pinned seeds of difficulty_ramps_car_speed had to be re-searched. any future
+  generation change past lane 15 will move them again.

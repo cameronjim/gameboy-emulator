@@ -106,6 +106,21 @@ To build the rom yourself, install [gbdk-2020](https://github.com/gbdk-2020/gbdk
 and configure with `-DGBDK_HOME=<path>`; the `flappy` target and its emulator
 driven tests appear automatically.
 
+## Crossy Road (our own game, too)
+
+`games/crossy/` is an endless road-crosser in the spirit of Crossy Road,
+also written from scratch in gbdk-2020 C. Launch `crossy.gb` like any game.
+
+- Arrows or `WASD` hop the chick one cell in any direction.
+- Grass is safe (trees block), roads have traffic, rivers must be crossed on
+  drifting logs, and train tracks give you one blinking warning before the
+  train. It all gets faster the further you go.
+- Don't dawdle: idle too long or fall behind the scrolling camera and the
+  eagle takes you.
+- Score is the furthest lane you reach; your best saves automatically.
+
+The same `-DGBDK_HOME` configure flag builds it and its tests.
+
 ## About the included game
 
 Real Tetris is copyrighted, so it is not included. `tetris.gb` is actually

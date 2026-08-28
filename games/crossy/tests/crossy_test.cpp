@@ -4,11 +4,13 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <span>
 #include <string>
 #include <utility>
@@ -45,11 +47,15 @@ constexpr uint8_t kTreeTileId = 0xA1;
 constexpr uint8_t kRoadTileId = 0xA2;
 constexpr uint8_t kRoadStripeTileId = 0xA3;
 constexpr uint8_t kWaterTileId = 0xA4;
+constexpr uint8_t kRailTileId = 0xA5;
+constexpr uint8_t kRailWarnTileId = 0xA6;
 constexpr uint8_t kChickTileId = 0xE0;
 constexpr uint8_t kChickHopTileId = 0xE1;
 constexpr uint8_t kCarFrontTileId = 0xC0;
 constexpr uint8_t kCarRearTileId = 0xC1;
 constexpr uint8_t kLogTileId = 0xC4;
+constexpr uint8_t kTrainFirstTileId = 0xC8;
+constexpr uint8_t kTrainLastTileId = 0xCB;
 constexpr uint8_t kDigitTileId = 0xD0;
 constexpr uint8_t kEagleFirstTileId = 0xCC;
 constexpr uint8_t kEagleLastTileId = 0xCD;
@@ -73,6 +79,13 @@ bool is_road_tile(int tile) {
 bool is_water_tile(int tile) {
     return tile == kWaterTileId;
 }
+
+bool is_track_tile(int tile) {
+    return tile == kRailTileId || tile == kRailWarnTileId;
+}
+
+// map column of the warning light, the one cell of a track lane whose art blinks
+constexpr int kWarnTileCol = 10;
 
 // the grid: 10 columns of 16 px, the chick's cell inset 4 px inside its own
 constexpr int kGridCols = 10;
@@ -219,10 +232,21 @@ bool cell_blocked(const gb::Gameboy& gameboy, const Chick& c, int k, int gcol) {
     return cell_tile(gameboy, c, k, gcol) == kTreeTileId;
 }
 
-// water is crossable, but only on a log, so the dry land planner routes around it
+// a cell the chick can simply stand on: neither a tree nor open water
+bool cell_landable(const gb::Gameboy& gameboy, const Chick& c, int k, int gcol) {
+    const int tile = cell_tile(gameboy, c, k, gcol);
+    return tile != kTreeTileId && !is_water_tile(tile);
+}
+
+// water needs a log and rails need a timed window, so the dry land planner routes around both
 bool cell_impassable(const gb::Gameboy& gameboy, const Chick& c, int k, int gcol) {
     const int tile = cell_tile(gameboy, c, k, gcol);
-    return tile == kTreeTileId || is_water_tile(tile);
+    return tile == kTreeTileId || is_water_tile(tile) || is_track_tile(tile);
+}
+
+// the warning light's own 8x8 cell, k lanes ahead of the chick
+int warn_cell(const gb::Gameboy& gameboy, const Chick& c, int k) {
+    return bg_cell(gameboy, kWarnTileCol, (c.y / kCellPx) * 2 - 2 * k);
 }
 
 enum Move { kLeft = 0, kRight = 1, kUp = 2, kNoMove = -1 };
@@ -414,6 +438,20 @@ constexpr int kRiderBridge = 8;
 
 std::vector<CarRun> log_runs(const gb::Gameboy& gameboy) {
     return runs_of(gameboy, kLogTileId, kLogTileId, kRiderBridge);
+}
+
+// the train is one solid block, but a chick standing on the rails punches the same hole a rider does
+std::vector<CarRun> train_runs(const gb::Gameboy& gameboy) {
+    return runs_of(gameboy, kTrainFirstTileId, kTrainLastTileId, kRiderBridge);
+}
+
+bool train_in_band(const gb::Gameboy& gameboy, int band) {
+    for (const CarRun& run : train_runs(gameboy)) {
+        if (run.band == band) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // the game centers a car on its oam x, so an unclipped run of 16 gives that number back
@@ -755,6 +793,57 @@ bool water_cross(gb::Gameboy& gameboy) {
     return hop_lane(gameboy, 1, 0, kRideAttempts);
 }
 
+// the warning blinks every 15 frames, so a light that holds its crossbuck this long is quiet
+constexpr uint32_t kQuietProof = 20;
+// a whole warning plus a whole sweep is barely a hundred frames, well short of the eagle's patience
+constexpr uint32_t kQuietWaitFrames = 320;
+
+bool track_looks_quiet(const gb::Gameboy& gameboy, int k) {
+    const Chick c = chick_at(gameboy);
+    return c.found && warn_cell(gameboy, c, k) == kRailWarnTileId &&
+           !train_in_band(gameboy, chick_band(c) - k);
+}
+
+// holds still until the track k lanes ahead has proved itself between sweeps
+bool wait_for_quiet(gb::Gameboy& gameboy, int k) {
+    uint32_t held = 0;
+    for (uint32_t frame = 0; frame < kQuietWaitFrames; ++frame) {
+        if (!chick_at(gameboy).found) {
+            return false;
+        }
+        held = track_looks_quiet(gameboy, k) ? held + 1 : 0;
+        if (held >= kQuietProof) {
+            return true;
+        }
+        gameboy.run_frame();
+    }
+    return false;
+}
+
+// rails are grass on a timer: crossed only from a proven quiet light, and never stood on after
+bool track_cross(gb::Gameboy& gameboy) {
+    const Chick c = chick_at(gameboy);
+    if (!c.found) {
+        return false;
+    }
+    const int gcol = chick_cell(c);
+    // the lane past a track is always grass, so the crossing only needs a column clear of trees
+    if (cell_impassable(gameboy, c, 2, gcol)) {
+        const int move = sidestep_move(gameboy, c, gcol, 1);
+        if (move == kNoMove) {
+            return false;
+        }
+        tap(gameboy, button_for(move));
+        return true;
+    }
+    if (!wait_for_quiet(gameboy, 1)) {
+        return false;
+    }
+    tap(gameboy, gb::Button::Up);
+    tap(gameboy, gb::Button::Up);
+    return true;
+}
+
 // one autopilot action: a plain hop, a sidestep, a road chunk crossed at once, or a river ridden
 bool autopilot_step(gb::Gameboy& gameboy) {
     const Chick c = chick_at(gameboy);
@@ -762,6 +851,22 @@ bool autopilot_step(gb::Gameboy& gameboy) {
         return false;
     }
     const int gcol = chick_cell(c);
+    if (is_track_tile(cell_tile(gameboy, c, 0, gcol))) {
+        // standing on rails is never safe, so the exit hop outranks anything the planner wants
+        if (cell_landable(gameboy, c, 1, gcol)) {
+            tap(gameboy, gb::Button::Up);
+            return true;
+        }
+        const int move = sidestep_move(gameboy, c, gcol, 0);
+        if (move == kNoMove) {
+            return false;
+        }
+        tap(gameboy, button_for(move));
+        return true;
+    }
+    if (is_track_tile(cell_tile(gameboy, c, 1, gcol))) {
+        return track_cross(gameboy);
+    }
     if (is_water_tile(cell_tile(gameboy, c, 0, gcol)) || is_water_tile(cell_tile(gameboy, c, 1, gcol))) {
         return water_cross(gameboy);
     }
@@ -831,13 +936,91 @@ bool board_a_log(gb::Gameboy& gameboy, int steps) {
     return false;
 }
 
+// autopilots up to the bank of the first track it meets and stops on the lane below it
+bool walk_to_track(gb::Gameboy& gameboy, int steps) {
+    for (int i = 0; i < steps; ++i) {
+        const Chick c = chick_at(gameboy);
+        if (!c.found) {
+            return false;
+        }
+        if (is_track_tile(cell_tile(gameboy, c, 1, chick_cell(c)))) {
+            return true;
+        }
+        if (!autopilot_step(gameboy)) {
+            return false;
+        }
+    }
+    return false;
+}
+
+// sidesteps along the current lane until the column past the track is one the chick can land on
+bool line_up_past_track(gb::Gameboy& gameboy) {
+    for (int guard = 0; guard < kGridCols; ++guard) {
+        const Chick c = chick_at(gameboy);
+        if (!c.found) {
+            return false;
+        }
+        if (cell_landable(gameboy, c, 2, chick_cell(c))) {
+            return true;
+        }
+        const int move = sidestep_move(gameboy, c, chick_cell(c), 1);
+        if (move == kNoMove) {
+            return false;
+        }
+        tap(gameboy, button_for(move));
+    }
+    return false;
+}
+
+// how many warning cells the whole two row lane carries; the light is a single cell
+int warn_cells_in_lane(const gb::Gameboy& gameboy, const Chick& c, int k) {
+    const int row = (c.y / kCellPx) * 2 - 2 * k;
+    int n = 0;
+    for (int dr = 0; dr < 2; ++dr) {
+        for (int cx = 0; cx < 20; ++cx) {
+            n += bg_cell(gameboy, cx, row + dr) == kRailWarnTileId ? 1 : 0;
+        }
+    }
+    return n;
+}
+
+// holds still until the light k lanes ahead drops its crossbuck: the warning has begun
+bool wait_for_blink(gb::Gameboy& gameboy, int k, uint32_t budget) {
+    for (uint32_t frame = 0; frame < budget; ++frame) {
+        const Chick c = chick_at(gameboy);
+        if (!c.found) {
+            return false;
+        }
+        if (warn_cell(gameboy, c, k) == kRailTileId) {
+            return true;
+        }
+        gameboy.run_frame();
+    }
+    return false;
+}
+
+// holds still until the sweep itself is on screen k lanes ahead
+bool wait_for_train(gb::Gameboy& gameboy, int k, uint32_t budget) {
+    for (uint32_t frame = 0; frame < budget; ++frame) {
+        const Chick c = chick_at(gameboy);
+        if (!c.found) {
+            return false;
+        }
+        if (train_in_band(gameboy, chick_band(c) - k)) {
+            return true;
+        }
+        gameboy.run_frame();
+    }
+    return false;
+}
+
 // every cell of the play area, minus the ones a sprite fully covers
 bool play_area_is_all_terrain(const gb::Gameboy& gameboy) {
     for (int cy = 0; cy < 18; ++cy) {
         for (int cx = 0; cx < 20; ++cx) {
             const int tile = bg_cell(gameboy, cx, cy);
             if (tile != kNoTile && tile != kGrassTileId && tile != kTreeTileId && !is_road_tile(tile) &&
-                !is_water_tile(tile)) {
+                !is_water_tile(tile) && !is_track_tile(tile)) {
                 return false;
             }
         }
@@ -898,6 +1081,17 @@ bool popup_shown(const gb::Gameboy& gameboy) {
         }
     }
     return false;
+}
+
+// runs frames until the popup lands, or gives up
+bool wait_for_death(gb::Gameboy& gameboy, uint32_t budget) {
+    for (uint32_t frame = 0; frame < budget; ++frame) {
+        if (popup_shown(gameboy)) {
+            return true;
+        }
+        gameboy.run_frame();
+    }
+    return popup_shown(gameboy);
 }
 
 // plain font cells only ever reach the screen through the hover screen
@@ -987,6 +1181,33 @@ double fastest_car(gb::Gameboy& gameboy) {
         best = std::max(best, std::fabs(snap_speed(phase_delta(now, was) / kMeasureFrames)));
     }
     return best;
+}
+
+// peak to peak, not peak: a triggered channel at volume zero still sits at its dac floor
+int32_t audio_swing(gb::Gameboy& gameboy, uint32_t frames) {
+    std::array<int16_t, 8192> buffer{};
+    int16_t high = std::numeric_limits<int16_t>::min();
+    int16_t low = std::numeric_limits<int16_t>::max();
+    for (uint32_t i = 0; i < frames; ++i) {
+        gameboy.run_frame();
+        const size_t got = gameboy.read_audio(buffer);
+        for (size_t s = 0; s < got; ++s) {
+            high = std::max(high, buffer[s]);
+            low = std::min(low, buffer[s]);
+        }
+    }
+    return high < low ? 0 : static_cast<int32_t>(high) - static_cast<int32_t>(low);
+}
+
+// measured locally: a decayed channel holds one dc level, a hop swings past 6000, a hit past 30000
+constexpr int32_t kSilentSwing = 512;
+constexpr int32_t kHopSwing = 1000;
+constexpr int32_t kDeathSwing = 4000;
+
+void drain_audio(gb::Gameboy& gameboy) {
+    std::array<int16_t, 8192> buffer{};
+    while (gameboy.read_audio(buffer) != 0) {
+    }
 }
 
 std::vector<int> play_grid(const gb::Gameboy& gameboy) {
@@ -1322,7 +1543,7 @@ TEST_CASE("popup_is_centered_and_solid") {
         for (size_t x = 0; x < gb::kLcdWidth; ++x) {
             const uint16_t id = ids[y * gb::kLcdWidth + x];
             const uint8_t tile = static_cast<uint8_t>(id);
-            if ((id & 0x100u) != 0 || tile < kGrassTileId || tile > kWaterTileId) {
+            if ((id & 0x100u) != 0 || tile < kGrassTileId || tile > kRailWarnTileId) {
                 continue;
             }
             above = above || y < kPopupTopPx;
@@ -1778,7 +1999,8 @@ TEST_CASE("difficulty_ramps_car_speed") {
     const std::vector<uint8_t> rom = read_crossy_rom();
 
     // fixed seeds whose deep road lanes roll fast; the opening ones cannot, whatever they roll
-    for (uint32_t hover_extra : {6u, 7u, 8u}) {
+    // re-searched for milestone 6: the track roll from lane 15 shifts every later rng draw
+    for (uint32_t hover_extra : {4u, 10u, 13u, 23u}) {
         gb::Gameboy gameboy;
         start_play(gameboy, rom, hover_extra);
 
@@ -1799,6 +2021,311 @@ TEST_CASE("difficulty_ramps_car_speed") {
         REQUIRE(hud_score(gameboy) >= 14);
         REQUIRE(deep > kBaseCarMax + kSpeedTol);
     }
+}
+
+// the whole quiet-warning-sweep loop fits in this, well short of the eagle's patience
+constexpr uint32_t kTrackWatchFrames = 400;
+// the light first drops its crossbuck 15 frames into a 60 frame warning, so the sweep is 46 away
+constexpr int kBlinkToTrainMin = 40;
+constexpr int kBlinkToTrainMax = 55;
+// 5 px a frame from just off the right edge takes this many frames to clear the screen
+constexpr int kSweepMin = 30;
+constexpr int kSweepMax = 46;
+// the sweep enters at the right edge, so its first sighting reaches within a sprite of it
+constexpr int kEnterX = 152;
+// the two dings of a warning, kTrackBellGap apart
+constexpr int kBellGap = 30;
+constexpr int kBellSwing = 4000;
+
+TEST_CASE("tracks_appear") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    // fixed seeds whose first track is the earliest one generation allows
+    for (uint32_t hover_extra : {2u, 16u, 17u}) {
+        gb::Gameboy gameboy;
+        start_play(gameboy, rom, hover_extra);
+
+        // nothing is generated past lane 14 until the camera reaches lane 9, so no rail can show yet
+        for (int step = 0; step < 20 && hud_score(gameboy) < 7; ++step) {
+            REQUIRE_FALSE(bg_has_tile(gameboy, kRailTileId));
+            REQUIRE_FALSE(bg_has_tile(gameboy, kRailWarnTileId));
+            REQUIRE(autopilot_step(gameboy));
+        }
+
+        REQUIRE(walk_to_track(gameboy, 60));
+        REQUIRE(wait_for_quiet(gameboy, 1));
+        const Chick c = chick_at(gameboy);
+        REQUIRE(c.found);
+
+        // rails end to end, and the lane the chick stands on is not one of them
+        for (int col = 0; col < kGridCols; ++col) {
+            REQUIRE(is_track_tile(cell_tile(gameboy, c, 1, col)));
+        }
+        REQUIRE_FALSE(is_track_tile(cell_tile(gameboy, c, 0, chick_cell(c))));
+        // tracks come singly and a danger chunk is always followed by grass
+        for (int col = 0; col < kGridCols; ++col) {
+            REQUIRE_FALSE(is_track_tile(cell_tile(gameboy, c, 2, col)));
+            REQUIRE_FALSE(is_water_tile(cell_tile(gameboy, c, 2, col)));
+            REQUIRE_FALSE(is_road_tile(cell_tile(gameboy, c, 2, col)));
+        }
+        // one warning cell in the whole lane, near its center, and lit between sweeps
+        REQUIRE(warn_cells_in_lane(gameboy, c, 1) == 1);
+        REQUIRE(warn_cell(gameboy, c, 1) == kRailWarnTileId);
+        REQUIRE(play_area_is_all_terrain(gameboy));
+    }
+}
+
+TEST_CASE("warning_precedes_train") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    // fixed seeds whose first track is quiet on arrival, so the whole cycle is watched from the start
+    for (uint32_t hover_extra : {6u, 7u, 10u, 34u}) {
+        gb::Gameboy gameboy;
+        start_play(gameboy, rom, hover_extra);
+        REQUIRE(walk_to_track(gameboy, 60));
+        REQUIRE(wait_for_quiet(gameboy, 1));
+
+        int blink = -1;
+        int train = -1;
+        int gone = -1;
+        int toggles = 0;
+        int entered = -1;
+        int leftmost = static_cast<int>(gb::kLcdWidth);
+        bool off = false;
+        bool leftward = true;
+        for (uint32_t frame = 0; frame < kTrackWatchFrames && gone < 0; ++frame) {
+            const Chick c = chick_at(gameboy);
+            REQUIRE(c.found);
+            const bool now_off = warn_cell(gameboy, c, 1) == kRailTileId;
+            if (now_off != off) {
+                off = now_off;
+                ++toggles;
+            }
+            if (now_off && blink < 0) {
+                blink = static_cast<int>(frame);
+            }
+
+            int x0 = -1;
+            int x1 = -1;
+            for (const CarRun& sweep : train_runs(gameboy)) {
+                if (sweep.band == chick_band(c) - 1) {
+                    x0 = sweep.x0;
+                    x1 = sweep.x1;
+                }
+            }
+            if (x0 >= 0) {
+                if (train < 0) {
+                    train = static_cast<int>(frame);
+                    entered = x1;
+                }
+                leftward = leftward && x0 <= leftmost;
+                leftmost = x0;
+            } else if (train >= 0) {
+                gone = static_cast<int>(frame);
+            }
+            gameboy.run_frame();
+        }
+
+        // no sweep ever came without the light blinking a whole warning ahead of it
+        REQUIRE(blink >= 0);
+        REQUIRE(train > blink);
+        REQUIRE(train - blink >= kBlinkToTrainMin);
+        REQUIRE(train - blink <= kBlinkToTrainMax);
+        // the light swaps art four times over the warning, so at least three land before the train
+        REQUIRE(toggles >= 3);
+
+        // right to left: in at the screen's right edge, off at the left, never once back
+        REQUIRE(entered >= kEnterX);
+        REQUIRE(leftward);
+        REQUIRE(leftmost == 0);
+        REQUIRE(gone > train);
+        REQUIRE(gone - train >= kSweepMin);
+        REQUIRE(gone - train <= kSweepMax);
+        REQUIRE_FALSE(popup_shown(gameboy));
+    }
+}
+
+TEST_CASE("warning_rings_the_bell") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    for (uint32_t hover_extra : {6u, 34u}) {
+        gb::Gameboy gameboy;
+        start_play(gameboy, rom, hover_extra);
+        REQUIRE(walk_to_track(gameboy, 60));
+        REQUIRE(wait_for_quiet(gameboy, 1));
+        drain_audio(gameboy);
+
+        int first = -1;
+        int second = -1;
+        int blink = -1;
+        int32_t peak = 0;
+        bool ringing = false;
+        for (uint32_t frame = 0; frame < kTrackWatchFrames; ++frame) {
+            const Chick c = chick_at(gameboy);
+            REQUIRE(c.found);
+            if (blink < 0 && warn_cell(gameboy, c, 1) == kRailTileId) {
+                blink = static_cast<int>(frame);
+            }
+            // the chick never moves here, so a swing this wide can only be the bell
+            const int32_t swing = audio_swing(gameboy, 1);
+            peak = std::max(peak, swing);
+            // a ding decays over a dozen frames, so only its leading edge counts as a ring
+            const bool loud = swing > kBellSwing;
+            if (loud && !ringing) {
+                if (first < 0) {
+                    first = static_cast<int>(frame);
+                } else {
+                    second = static_cast<int>(frame);
+                    break;
+                }
+            }
+            ringing = loud;
+        }
+        REQUIRE(first >= 0);
+        REQUIRE(second > 0);
+        // rung at the warning's start and again halfway through it
+        REQUIRE(second - first == kBellGap);
+        REQUIRE(peak > kBellSwing);
+        // and the first ding beats the first blink, which is a quarter of the warning in
+        REQUIRE(blink > first);
+    }
+}
+
+TEST_CASE("train_kills") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    // standing on the rails through a warning: the sweep takes the chick
+    for (uint32_t hover_extra : {6u, 10u}) {
+        gb::Gameboy gameboy;
+        start_play(gameboy, rom, hover_extra);
+        REQUIRE(walk_to_track(gameboy, 60));
+        REQUIRE(wait_for_blink(gameboy, 1, kTrackWatchFrames));
+        tap(gameboy, gb::Button::Up);
+        REQUIRE_FALSE(popup_shown(gameboy));
+
+        REQUIRE(wait_for_death(gameboy, 150));
+        run(gameboy, 6);
+        REQUIRE_FALSE(chick_at(gameboy).found);
+        REQUIRE(train_runs(gameboy).empty());
+    }
+
+    // and hopping onto rails a sweep is already crossing is no better
+    for (uint32_t hover_extra : {7u, 34u}) {
+        gb::Gameboy gameboy;
+        start_play(gameboy, rom, hover_extra);
+        REQUIRE(walk_to_track(gameboy, 60));
+        REQUIRE(wait_for_train(gameboy, 1, kTrackWatchFrames));
+        tap(gameboy, gb::Button::Up);
+
+        REQUIRE(wait_for_death(gameboy, 90));
+        run(gameboy, 6);
+        REQUIRE_FALSE(chick_at(gameboy).found);
+    }
+}
+
+TEST_CASE("surviving_the_warning") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    for (uint32_t hover_extra : {6u, 10u}) {
+        gb::Gameboy gameboy;
+        start_play(gameboy, rom, hover_extra);
+        REQUIRE(walk_to_track(gameboy, 60));
+        REQUIRE(line_up_past_track(gameboy));
+        const int score = hud_score(gameboy);
+
+        // onto the rails with the light already blinking, held there, then off in time
+        REQUIRE(wait_for_blink(gameboy, 1, kTrackWatchFrames));
+        tap(gameboy, gb::Button::Up);
+        REQUIRE(hud_score(gameboy) == score + 1);
+        REQUIRE_FALSE(popup_shown(gameboy));
+
+        run(gameboy, 15);
+        REQUIRE_FALSE(popup_shown(gameboy));
+        tap(gameboy, gb::Button::Up);
+        REQUIRE(hud_score(gameboy) == score + 2);
+        REQUIRE_FALSE(popup_shown(gameboy));
+
+        // the danger was real: the sweep crossed the rails one lane back, the ones just left
+        REQUIRE(wait_for_train(gameboy, -1, 90));
+        REQUIRE_FALSE(popup_shown(gameboy));
+        REQUIRE(chick_at(gameboy).found);
+    }
+}
+
+TEST_CASE("autopilot_crosses_tracks") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    // fixed seeds whose deep world holds several tracks, crossed on a proven quiet light every time
+    int total = 0;
+    for (uint32_t hover_extra : {2u, 8u, 16u, 29u, 42u}) {
+        gb::Gameboy gameboy;
+        start_play(gameboy, rom, hover_extra);
+
+        int tracks = 0;
+        for (int step = 0; step < 80 && hud_score(gameboy) < 20; ++step) {
+            const Chick c = chick_at(gameboy);
+            REQUIRE(c.found);
+            tracks += is_track_tile(cell_tile(gameboy, c, 1, chick_cell(c))) ? 1 : 0;
+            if (!autopilot_step(gameboy)) {
+                break;
+            }
+        }
+        REQUIRE(tracks >= 1);
+        REQUIRE(hud_score(gameboy) >= 20);
+        REQUIRE(chick_at(gameboy).found);
+        REQUIRE_FALSE(popup_shown(gameboy));
+        REQUIRE(play_area_is_all_terrain(gameboy));
+        total += tracks;
+    }
+    // not one lucky world: the five runs waited out several sweeps between them
+    REQUIRE(total >= 6);
+}
+
+TEST_CASE("hop_makes_sound") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    // the start press is not a hop, so nothing has been triggered yet
+    drain_audio(gameboy);
+
+    const int32_t quiet = audio_swing(gameboy, 6);
+    REQUIRE(quiet < kSilentSwing);
+    gameboy.set_button(gb::Button::Up, true);
+    gameboy.run_frame();
+    gameboy.set_button(gb::Button::Up, false);
+    REQUIRE(audio_swing(gameboy, 10) > kHopSwing);
+}
+
+TEST_CASE("death_makes_sound") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    for (int step = 0; step < 20; ++step) {
+        const Chick c = chick_at(gameboy);
+        REQUIRE(c.found);
+        if (road_chunk_ahead(gameboy, c, chick_col(c)) > 0) {
+            tap(gameboy, gb::Button::Up);
+            break;
+        }
+        REQUIRE(autopilot_step(gameboy));
+    }
+
+    // the hop onto the asphalt has to decay before the crash can be measured against silence
+    run(gameboy, 30);
+    drain_audio(gameboy);
+    REQUIRE(audio_swing(gameboy, 6) < kSilentSwing);
+
+    int32_t burst = 0;
+    bool died = false;
+    for (uint32_t frame = 0; frame < 900 && !died; ++frame) {
+        burst = std::max(burst, audio_swing(gameboy, 1));
+        died = popup_shown(gameboy);
+    }
+    REQUIRE(died);
+    // the car got the chick while it stood still, so the only sound in that stretch was the hit
+    REQUIRE(burst > kDeathSwing);
 }
 
 TEST_CASE("crossy_play_is_deterministic") {
