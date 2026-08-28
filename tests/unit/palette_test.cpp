@@ -74,12 +74,28 @@ uint32_t blue_of(uint32_t c) {
 } // namespace
 
 TEST_CASE("colorize_crossy_water_is_blue") {
-    // water is shade 1 rippled with shade 3 crests; every entry reads as water
-    for (uint8_t shade = 0; shade < 4; ++shade) {
-        const uint32_t c = colorize_crossy(0xA4, shade);
-        REQUIRE(blue_of(c) > red_of(c));
-        REQUIRE(blue_of(c) > green_of(c));
+    // both water lanes read as water at every entry
+    for (const uint16_t tile : std::array<uint16_t, 2>{0xA4, 0xA8}) {
+        for (uint8_t shade = 0; shade < 4; ++shade) {
+            const uint32_t c = colorize_crossy(tile, shade);
+            REQUIRE(blue_of(c) > red_of(c));
+            REQUIRE(blue_of(c) > green_of(c));
+        }
     }
+}
+
+TEST_CASE("colorize_crossy_water_lanes_step_by_parity") {
+    // the even lane's base is shade 2, the odd lane's shade 1: one clear step deeper, same hue
+    const uint32_t shallow = colorize_crossy(0xA4, 2);
+    const uint32_t deep = colorize_crossy(0xA8, 1);
+    REQUIRE(blue_of(shallow) > blue_of(deep) + 0x20u);
+    REQUIRE(red_of(shallow) > red_of(deep));
+    // and each lane's own ripple is a lift on its base, never a jump to another lane's shade
+    const uint32_t shallow_ripple = colorize_crossy(0xA4, 3);
+    const uint32_t deep_ripple = colorize_crossy(0xA8, 2);
+    REQUIRE(blue_of(shallow_ripple) > blue_of(shallow));
+    REQUIRE(blue_of(deep_ripple) > blue_of(deep));
+    REQUIRE(blue_of(deep_ripple) < blue_of(shallow));
 }
 
 TEST_CASE("colorize_crossy_road_is_grey_with_white_markings") {
@@ -115,22 +131,33 @@ TEST_CASE("colorize_crossy_warning_carries_a_red_accent") {
 }
 
 TEST_CASE("colorize_crossy_movers_wear_their_own_colors") {
-    // cars red, logs brown, train dark slate
-    const uint32_t car = colorize_crossy(0x1C0, 1);
+    // cars red, logs brown, train dark slate; every 8x16 pair of a family shares its palette
+    const uint32_t car = colorize_crossy(0x1B0, 2);
     REQUIRE(red_of(car) > green_of(car) + 0x60u);
     REQUIRE(red_of(car) > blue_of(car) + 0x60u);
-    REQUIRE(colorize_crossy(0x1C1, 1) == car);
-    const uint32_t log = colorize_crossy(0x1C4, 2);
+    for (uint16_t tile = 0x1B0; tile <= 0x1B3; ++tile) {
+        REQUIRE(colorize_crossy(tile, 2) == car);
+    }
+    const uint32_t log = colorize_crossy(0x1B4, 2);
     REQUIRE(red_of(log) > green_of(log));
     REQUIRE(green_of(log) > blue_of(log));
-    const uint32_t train = colorize_crossy(0x1C8, 2);
+    for (uint16_t tile = 0x1B4; tile <= 0x1B9; ++tile) {
+        REQUIRE(colorize_crossy(tile, 2) == log);
+    }
+    const uint32_t train = colorize_crossy(0x1C0, 2);
     REQUIRE(red_of(train) < 0x60u);
     REQUIRE(blue_of(train) > red_of(train));
+    for (uint16_t tile = 0x1C0; tile <= 0x1C7; ++tile) {
+        REQUIRE(colorize_crossy(tile, 2) == train);
+    }
+    // the train's windows are its shade 3, so they light up warm
+    const uint32_t window = colorize_crossy(0x1C0, 3);
+    REQUIRE(red_of(window) > blue_of(window) + 0x60u);
 }
 
 TEST_CASE("colorize_crossy_chick_pops_against_every_lane") {
     // the visibility guarantee: no chick shade collides with a lane's own color
-    constexpr std::array<uint16_t, 8> kLaneTiles = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7};
+    constexpr std::array<uint16_t, 9> kLaneTiles = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8};
     for (uint8_t shade = 1; shade < 4; ++shade) {
         const uint32_t chick = colorize_crossy(0x1E0, shade);
         for (const uint16_t tile : kLaneTiles) {
@@ -146,18 +173,19 @@ TEST_CASE("colorize_crossy_chick_pops_against_every_lane") {
 
 TEST_CASE("colorize_crossy_digits_and_font_stay_gray") {
     for (uint8_t shade = 0; shade < 4; ++shade) {
-        // hud digits keep the white badge they render as today
-        REQUIRE(colorize_crossy(0x1D0, shade) == kGrayShades[shade]);
-        REQUIRE(colorize_crossy(0x1D9, shade) == kGrayShades[shade]);
+        // the ten digit pairs keep the white badge they render as today
+        for (uint16_t tile = 0x1C8; tile <= 0x1DB; ++tile) {
+            REQUIRE(colorize_crossy(tile, shade) == kGrayShades[shade]);
+        }
         // font and popup tiles, and any unmapped tile
         REQUIRE(colorize_crossy(0x41, shade) == kGrayShades[shade]);
         REQUIRE(colorize_crossy(0x60, shade) == kGrayShades[shade]);
-        REQUIRE(colorize_crossy(0xB0, shade) == kGrayShades[shade]);
+        REQUIRE(colorize_crossy(0x1BA, shade) == kGrayShades[shade]);
     }
     REQUIRE(kGrayShades[0] == kBlack);
     REQUIRE(kGrayShades[3] == kWhite);
     // digits match what the tetris path gives the same shades
-    REQUIRE(colorize_crossy(0x1D0, 1) == colorize(0x1D0, 1, 3, 3, 0x0000, 0x0000));
-    REQUIRE(colorize_crossy(0x1D0, 2) == colorize(0x1D0, 2, 3, 3, 0x0000, 0x0000));
-    REQUIRE(colorize_crossy(0x1D0, 3) == colorize(0x1D0, 3, 3, 3, 0x0000, 0x0000));
+    REQUIRE(colorize_crossy(0x1C8, 1) == colorize(0x1C8, 1, 3, 3, 0x0000, 0x0000));
+    REQUIRE(colorize_crossy(0x1C8, 2) == colorize(0x1C8, 2, 3, 3, 0x0000, 0x0000));
+    REQUIRE(colorize_crossy(0x1C8, 3) == colorize(0x1C8, 3, 3, 3, 0x0000, 0x0000));
 }

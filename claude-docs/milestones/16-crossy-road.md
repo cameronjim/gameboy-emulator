@@ -16,18 +16,25 @@ distance. gbdk-2020 c, mbc1+ram+battery, title `CROSSY`, best score in sram.
 - lanes are 16 px (2 tile rows); 10 columns of 16 px; camera scrolls
   vertically via scy over a 32-row bg ring (16 buffered lanes), streaming one
   lane (2 rows x 20 tiles) per crossing, written only in vblank.
-- movers are 8x8 sprite pairs/triples: car = 2 sprites (16 px), log = 3
-  (24 px), train = handled as a sweeping 4-sprite block. per-lane caps:
-  3 cars or 2 logs, so one scanline never exceeds 3x2 (cars) or 2x3 (logs)
-  + player + hud = 10 sprites. oam worst case ~34 of 40.
-- player is one 8x8 sprite centered in its 16 px cell.
+- every sprite is 8x16 (SPRITES_8x16), so tile art comes in consecutive
+  even-aligned pairs and a sprite parked at a lane's top edge covers exactly
+  that lane. sprite counts are unchanged by that: car = 2 sprites (16x16),
+  log = 3 (24x16), train = a sweeping 6-sprite block (48x16), eagle = 2
+  (16x16). per-lane caps: 2 cars or 2 logs, so one scanline sees at most 6
+  movers + 3 hud digits, or 6 + 2 eagle + player. oam worst case 36 of 40.
+- player is one 8x16 sprite centered across its 16 px cell.
+- a rider snaps onto its log's own 8 px sprite grid, so their oam x are equal
+  and dmg's index tie-break draws the chick (sprite 0) over the log.
 
 ## test/tile-id contract (the emulator is the harness, as in milestone 15)
 
 - bg terrain: grass 0xA0, tree 0xA1, road 0xA2, road stripe 0xA3, water 0xA4,
-  rail 0xA5, rail warning 0xA6. popup inverted font at 0x60-0x9F.
-- sprites: player 0xE0-0xE3 (idle/hop frames), car 0xC0-0xC1, log 0xC4,
-  train 0xC8-0xCB, hud digits 0xD0-0xD9.
+  rail 0xA5, rail warning 0xA6, alt grass 0xA7, deep water 0xA8. grass and
+  water each take one tile per lane by lane parity, so a lane is one flat band
+  and a boundary reads as a shade step. popup inverted font at 0x60-0x9F.
+- sprites, all 8x16 pairs: car 0xB0-0xB3, log 0xB4-0xB9, eagle 0xBC-0xBF,
+  train 0xC0-0xC7, hud digits 0xC8-0xDB (badge in each pair's top tile),
+  player 0xE0-0xE3 (idle pair then hop pair).
 - rng seeds from the hover frame counter (flappy lesson: scripted tests stay
   valid across rom changes). all text lines even length, print_centered.
 - tests read framebuffer_tiles(); directional assertions only.

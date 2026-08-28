@@ -40,10 +40,20 @@ out-of-scope items noticed during milestones, per claude.md rule 8.
   hover entry, so the boot world is one fixed world. a scripted test reaches any
   other world only by dying and choosing when to dismiss the popup, which is
   what the tests' enter_world helper does.
-- crossy: the water glint tile repeats every 8 px, so its glints line up in
-  columns across a lane. a second glint tile alternated per cell would scatter
-  them and cost one more tile id.
+- crossy: the water ripple tile repeats every 8 px, so its ripples land on a
+  regular grid across a lane. a second ripple tile alternated per cell would
+  scatter them and cost one more tile id.
 - crossy: colorize_crossy maps unmapped tiles through kGrayShades, where shade 3
   is white, so the inverted font band renders as a pale card even though a dmg
   shows it black. the game over popup has always looked that way; giving the
   0x60-0x9f range its own palette is a frontend change of its own.
+- crossy: a ride snaps the chick onto the log's 8 px sprite grid, so it can pop
+  up to 4 px sideways on landing and can only sit at three offsets on a log. it
+  is what buys the oam x tie that keeps the rider drawn over its log.
+- crossy: with a log 14 px tall in a 16 px lane there is no room for a rider
+  above it, so the chick overlaps its log and wins on the tie instead. any
+  future sprite that must sit above a mover has the same problem and no tie.
+- crossy: the two log ends are the same rounded cap, so a 24 px log reads the
+  same either way round. a cut end grain ring would need a third tile pair.
+- crossy: 8x16 sprites cost twice the tile budget, so the sprite bank now runs
+  0xb0-0xe3. only 0xba-0xbb, 0xdc-0xdf and 0xe4+ are left for new art.
