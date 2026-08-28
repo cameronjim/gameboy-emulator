@@ -46,7 +46,7 @@ jobs:
           python3 tools/gen_opcodes.py
           git diff --exit-code core/opcodes.inc tests/unit/opcode_meta.inc
 
-  flappy:
+  games:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -61,7 +61,7 @@ jobs:
       - name: build
         run: cmake --build build -j
       - name: test
-        run: ctest --test-dir build -R flappy --output-on-failure
+        run: ctest --test-dir build -R 'flappy|crossy' --output-on-failure
 
   wasm:
     runs-on: ubuntu-latest
