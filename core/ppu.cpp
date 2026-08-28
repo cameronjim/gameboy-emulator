@@ -40,6 +40,7 @@ void Ppu::tick(uint32_t tcycles) {
             window_line_ = 0;
         }
         if (ly_ == kFirstVBlankLine) {
+            ++frames_;
             irq_.request(kIntVBlank);
             if ((stat_enables_ & kStatVBlankEnable) != 0) {
                 irq_.request(kIntStat);

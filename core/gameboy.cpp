@@ -29,8 +29,17 @@ bool Gameboy::load_rom(std::span<const uint8_t> bytes) {
 
 void Gameboy::run_frame() {
     if (cart_.has_value()) {
+        // run to the vblank edge so the framebuffer never mixes two scanouts
+        const uint64_t frame_start = ppu_.frame_count();
         uint32_t elapsed = 0;
-        while (elapsed < kFrameCycles) {
+        while (ppu_.frame_count() == frame_start) {
+            // lcd off never reaches vblank; spend one frame of cycles instead
+            if (elapsed >= kFrameCycles && !ppu_.lcd_enabled()) {
+                break;
+            }
+            if (elapsed >= 2 * kFrameCycles) {
+                break;
+            }
             const uint32_t t = cpu_.step();
             if (t == 0) {
                 // cpu trapped an unknown opcode and stopped

@@ -64,15 +64,19 @@ public:
     PpuMode mode() const {
         return mode_;
     }
+    bool lcd_enabled() const {
+        return (lcdc_ & 0x80) != 0;
+    }
+    // completed scanouts, advances at each vblank entry
+    uint64_t frame_count() const {
+        return frames_;
+    }
 
     static constexpr size_t kStateSize = 0x2000 + 0xA0 + 4 + 13;
     void save_state(StateWriter& w) const;
     void load_state(StateReader& r);
 
 private:
-    bool lcd_enabled() const {
-        return (lcdc_ & 0x80) != 0;
-    }
     PpuMode compute_mode() const;
     void enter_mode(PpuMode mode);
     void compare_lyc();
@@ -88,6 +92,8 @@ private:
     std::array<uint8_t, kLcdWidth * kLcdHeight> framebuffer_{};
     std::array<uint16_t, kLcdWidth * kLcdHeight> tile_ids_{};
     uint32_t dot_ = 0;
+    // presentation metadata only, deliberately not serialized
+    uint64_t frames_ = 0;
     uint8_t ly_ = 0;
     uint8_t lyc_ = 0;
     // pandocs power-up values

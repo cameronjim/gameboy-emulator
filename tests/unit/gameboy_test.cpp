@@ -33,8 +33,8 @@ TEST_CASE("rom_string_reaches_serial_sink") {
     REQUIRE(gameboy.load_rom(rom));
     gameboy.run_frame();
     REQUIRE(got == "OK");
-    // one frame advances at least the dmg frame budget
-    REQUIRE(gameboy.cycles() >= 70224);
+    // run_frame stops at the vblank edge; pandocs: vblank begins at line 144, 456 dots per line
+    REQUIRE(gameboy.cycles() >= 144u * 456u);
 }
 
 TEST_CASE("timer_interrupt_serviced_after_ime_set") {
