@@ -6,6 +6,9 @@
 // fills the 32 row ring with grass, generates the first visible lanes, parks the camera on lane 0
 void terrain_init(uint8_t seed);
 
+// rewrites one cached lane's two rows, undoing anything drawn over them; vblank only
+void terrain_redraw_lane(uint16_t lane);
+
 // 1 when a tree stands on that cell; only lanes still held by the ring may be asked
 uint8_t terrain_blocked(uint16_t lane, uint8_t col);
 

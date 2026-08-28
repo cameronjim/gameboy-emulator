@@ -18,6 +18,8 @@ static uint8_t rng_state;
 // lane records cached per ring slot, so a streamed row never re-rolls the rng
 static uint16_t lane_trees[kRingLanes];
 static uint8_t lane_kind[kRingLanes];
+// 1 when a road lane borders another road lane of its chunk below it, so it draws the dash row
+static uint8_t lane_dash[kRingLanes];
 // a track lane's phase machine, ticked only while the lane is on screen
 static uint8_t track_phase[kRingLanes];
 static uint16_t track_timer[kRingLanes];
@@ -143,6 +145,8 @@ static void generate_lane(uint16_t lane) {
     prev_gap = g;
     lane_trees[slot] = trees;
     lane_kind[slot] = kind;
+    // a danger chunk is always followed by grass, so an adjacent road lane is always the same chunk
+    lane_dash[slot] = (uint8_t)(kind == kLaneRoad && chained != 0U);
 }
 
 static void draw_lane(uint16_t lane) {
@@ -163,16 +167,22 @@ static void draw_lane(uint16_t lane) {
     for (c = 0; c < kGridCols; ++c) {
         x = (uint8_t)(c << 1);
         if (lane_kind[slot] == kLaneRoad) {
-            // one dash per cell: the stripe tile carries the center line's bottom rows
-            lane_buf[x] = kRoadStripeTileId;
+            // the dash row marks the seam with the road lane below; an outer edge is plain asphalt
+            lane_buf[x] = kRoadTileId;
             lane_buf[x + 1U] = kRoadTileId;
-            lane_buf[kScreenCols + x] = kRoadTileId;
+            lane_buf[kScreenCols + x] = lane_dash[slot] != 0U ? kRoadStripeTileId : kRoadTileId;
             lane_buf[kScreenCols + x + 1U] = kRoadTileId;
             continue;
         }
         if (lane_kind[slot] == kLaneWater) {
-            t = kWaterTileId;
-        } else if ((trees & kColBit[c]) != 0U) {
+            // glints on the top row, calm below, so the 16 px lane reads as one band
+            lane_buf[x] = kWaterTileId;
+            lane_buf[x + 1U] = kWaterTileId;
+            lane_buf[kScreenCols + x] = kWaterCalmTileId;
+            lane_buf[kScreenCols + x + 1U] = kWaterCalmTileId;
+            continue;
+        }
+        if ((trees & kColBit[c]) != 0U) {
             t = kTreeTileId;
         } else {
             // even lanes take one grass tile and odd lanes the other, so every boundary is drawn
@@ -218,6 +228,7 @@ void terrain_init(uint8_t seed) {
     set_bkg_data(kRoadTileId, 1, kRoadTile);
     set_bkg_data(kRoadStripeTileId, 1, kRoadStripeTile);
     set_bkg_data(kWaterTileId, 1, kWaterTile);
+    set_bkg_data(kWaterCalmTileId, 1, kWaterCalmTile);
 
     set_bkg_data(kRailTileId, 1, kRailTile);
     set_bkg_data(kRailWarnTileId, 1, kRailWarnTile);
@@ -225,6 +236,7 @@ void terrain_init(uint8_t seed) {
     for (i = 0; i < kRingLanes; ++i) {
         lane_trees[i] = 0;
         lane_kind[i] = kLaneGrass;
+        lane_dash[i] = 0;
         track_phase[i] = kTrackQuiet;
         track_timer[i] = kTrackQuietMin;
         train_x[i] = kTrainOffX;
@@ -239,6 +251,10 @@ void terrain_init(uint8_t seed) {
         ++gen_next;
     }
     terrain_apply_scy(0);
+}
+
+void terrain_redraw_lane(uint16_t lane) {
+    draw_lane(lane);
 }
 
 uint8_t terrain_blocked(uint16_t lane, uint8_t col) {

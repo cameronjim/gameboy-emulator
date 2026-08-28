@@ -18,8 +18,11 @@ extern const uint8_t kRoadTile[16];
 // one 8x8 tile at 0xa3: asphalt carrying a dash of the lane's center line
 extern const uint8_t kRoadStripeTile[16];
 
-// one 8x8 tile at 0xa4: pale water rippled with dark waves, drawn 2x2 to fill a 16 px cell
+// one 8x8 tile at 0xa4: open water with sparse glints, drawn across a lane's top tile row
 extern const uint8_t kWaterTile[16];
+
+// one 8x8 tile at 0xa8: the same water, calm; it fills a lane's bottom tile row
+extern const uint8_t kWaterCalmTile[16];
 
 // one 8x8 tile at 0xa5: a rail across ties, drawn 2x2 so a lane carries two rails
 extern const uint8_t kRailTile[16];

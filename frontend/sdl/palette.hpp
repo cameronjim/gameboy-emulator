@@ -136,6 +136,9 @@ inline uint32_t colorize_crossy(uint16_t id, uint8_t shade) {
         return kCrossyWarn[s];
     case 0xA7:
         return kCrossyGrassAlt[s];
+    // the calm half of a water lane shares the water's palette exactly
+    case 0xA8:
+        return kCrossyWater[s];
     default:
         break;
     }

@@ -59,15 +59,27 @@ const uint8_t kRoadStripeTile[16] = {
     0x00, 0xC3, // 22....22
 };
 
-// two staggered lines of dark crests ripple across a pale surface
+// sparse glints, never a crest line: a lane's two tile rows must not read as two lanes
 const uint8_t kWaterTile[16] = {
     0xFF, 0x00, // 11111111
-    0xFF, 0x66, // 13311331
-    0xFF, 0x99, // 31133113
+    0xFF, 0x30, // 11331111
     0xFF, 0x00, // 11111111
     0xFF, 0x00, // 11111111
-    0xFF, 0xCC, // 33113311
-    0xFF, 0x33, // 11331133
+    0xFF, 0x00, // 11111111
+    0xFF, 0x06, // 11111331
+    0xFF, 0x00, // 11111111
+    0xFF, 0x00, // 11111111
+};
+
+// the lane's lower half: flat open water, so nothing below the glints reads as a second lane
+const uint8_t kWaterCalmTile[16] = {
+    0xFF, 0x00, // 11111111
+    0xFF, 0x00, // 11111111
+    0xFF, 0x00, // 11111111
+    0xFF, 0x00, // 11111111
+    0xFF, 0x00, // 11111111
+    0xFF, 0x00, // 11111111
+    0xFF, 0x00, // 11111111
     0xFF, 0x00, // 11111111
 };
 
