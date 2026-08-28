@@ -172,7 +172,8 @@ void main(void) {
     build_inverse_font();
     save_init();
     sfx_init();
-    SPRITES_8x8;
+    // every sprite is a tall pair; a mover parked at its lane's top edge covers exactly the lane
+    SPRITES_8x16;
     // boot samples a counter that has not run yet, so the first world is always the same one
     enter_hover(frames);
 

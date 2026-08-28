@@ -21,6 +21,7 @@ void movers_hide(void);
 uint8_t movers_car_hit(uint16_t lane, uint8_t center_x);
 
 // 1 when a log of that water lane carries a chick centered on center_x; step takes its 8.8 drift
-uint8_t movers_log_ride(uint16_t lane, uint8_t center_x, int16_t* step);
+// pos takes that log's own 8.8 track position, which a boarding chick snaps itself onto
+uint8_t movers_log_ride(uint16_t lane, uint8_t center_x, int16_t* step, uint16_t* pos);
 
 #endif

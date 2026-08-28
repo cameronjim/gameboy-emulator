@@ -26,8 +26,8 @@ static uint8_t rng_next(void) {
 // the train's tile per sprite: nose, carriage, carriage, carriage, carriage, tail
 static const uint8_t kTrainOrder[kTrainSprites] = {0U, 1U, 2U, 1U, 2U, 3U};
 
-// track x doubles as oam x, so a mover spans screen x-half to x+half and centers on x
-static uint8_t track_x(uint8_t slot, uint8_t which, uint8_t water) {
+// the 8.8 track position of one of a lane's two movers
+static uint16_t track_pos(uint8_t slot, uint8_t which, uint8_t water) {
     uint16_t p = mover_pos[slot];
     uint16_t half = water != 0U ? kWaterPhase : kCarPhase;
 
@@ -35,7 +35,12 @@ static uint8_t track_x(uint8_t slot, uint8_t which, uint8_t water) {
         // half a lap is the same step whichever way round the track it is taken
         p = p >= half ? (uint16_t)(p - half) : (uint16_t)(p + half);
     }
-    return (uint8_t)(p >> 8);
+    return p;
+}
+
+// track x doubles as oam x, so a mover spans screen x-half to x+half and centers on x
+static uint8_t track_x(uint8_t slot, uint8_t which, uint8_t water) {
+    return (uint8_t)(track_pos(slot, which, water) >> 8);
 }
 
 // a car's lap is the whole 16 bit range, so its position wraps for free; water's is closed by hand
@@ -61,9 +66,10 @@ static int16_t lane_step(uint8_t slot) {
     return mover_dir[slot] != 0U ? (int16_t)mover_speed[slot] : (int16_t)(0 - (int16_t)mover_speed[slot]);
 }
 
-// a mover is a row of 8x8 sprites centered on the track x, parked whole once the track leaves screen
+// a mover is a row of 8x16 sprites centered on the track x, parked whole once the track leaves screen
 static uint8_t draw_mover(uint8_t sprite, uint8_t tx, uint8_t y, uint8_t water) {
     uint8_t parts = water ? kLogSprites : kCarSprites;
+    uint8_t base = water ? kLogTileId : kCarTileId;
     uint8_t x = (uint8_t)((uint8_t)(tx - (water ? kLogHalfPx : kCarHalfPx)) + kOamXOffset);
     uint8_t i;
 
@@ -71,8 +77,7 @@ static uint8_t draw_mover(uint8_t sprite, uint8_t tx, uint8_t y, uint8_t water) 
         if (tx >= kMoverDrawLimit) {
             park(sprite);
         } else {
-            // a car's two halves are consecutive tiles; a log repeats the one tile
-            set_sprite_tile(sprite, water ? kLogTileId : (uint8_t)(kCarTileId + i));
+            set_sprite_tile(sprite, (uint8_t)(base + (uint8_t)(i * kTilesPerSprite)));
             move_sprite(sprite, x, y);
         }
         x = (uint8_t)(x + kSpritePx);
@@ -84,14 +89,14 @@ static uint8_t draw_mover(uint8_t sprite, uint8_t tx, uint8_t y, uint8_t water) 
 // the train is one solid 48 px block; the pool lends it six slots, as a water lane's two logs do
 static uint8_t draw_train(uint8_t sprite, uint16_t lane) {
     int16_t x = terrain_train_x(lane);
-    uint8_t y = (uint8_t)(terrain_lane_screen_y(lane) + kMoverLaneInset + kOamYOffset);
+    uint8_t y = (uint8_t)(terrain_lane_screen_y(lane) + kOamYOffset);
     uint8_t i;
 
     for (i = 0; i < kTrainSprites; ++i) {
         if (x <= -(int16_t)kSpritePx || x >= (int16_t)kScreenWidthPx) {
             park(sprite);
         } else {
-            set_sprite_tile(sprite, (uint8_t)(kTrainTileId + kTrainOrder[i]));
+            set_sprite_tile(sprite, (uint8_t)(kTrainTileId + (uint8_t)(kTrainOrder[i] * kTilesPerSprite)));
             move_sprite(sprite, (uint8_t)(x + kOamXOffset), y);
         }
         x = (int16_t)(x + kSpritePx);
@@ -105,7 +110,7 @@ void movers_init(uint8_t seed) {
 
     rng_state = seed;
     set_sprite_data(kCarTileId, kCarTileCount, kCarTiles);
-    set_sprite_data(kLogTileId, kLogTileCount, kLogTile);
+    set_sprite_data(kLogTileId, kLogTileCount, kLogTiles);
     set_sprite_data(kTrainTileId, kTrainTileCount, kTrainTiles);
     for (i = 0; i < kMoverSprites; ++i) {
         set_sprite_prop((uint8_t)(kMoverFirstSprite + i), 0);
@@ -183,7 +188,7 @@ void movers_update_to(uint16_t last) {
         slot = (uint8_t)(lane & kRingLaneMask);
         mover_pos[slot] = track_advance(mover_pos[slot], lane_step(slot), water);
         // read back from scy so the movers ride the lane through a hop's slide
-        y = (uint8_t)(terrain_lane_screen_y(lane) + (water ? kLogLaneInset : kMoverLaneInset) + kOamYOffset);
+        y = (uint8_t)(terrain_lane_screen_y(lane) + kOamYOffset);
         for (which = 0; which < kMoversPerLane; ++which) {
             sprite = draw_mover(sprite, track_x(slot, which, water), y, water);
         }
@@ -210,7 +215,7 @@ uint8_t movers_car_hit(uint16_t lane, uint8_t center_x) {
     return 0;
 }
 
-uint8_t movers_log_ride(uint16_t lane, uint8_t center_x, int16_t* step) {
+uint8_t movers_log_ride(uint16_t lane, uint8_t center_x, int16_t* step, uint16_t* pos) {
     uint8_t slot = (uint8_t)(lane & kRingLaneMask);
     uint8_t which;
     int16_t d;
@@ -223,6 +228,7 @@ uint8_t movers_log_ride(uint16_t lane, uint8_t center_x, int16_t* step) {
         if (d >= -kLogRidePx && d <= kLogRidePx) {
             // the same 8.8 add the log took this frame, so the ride never drifts
             *step = lane_step(slot);
+            *pos = track_pos(slot, which, 1U);
             return 1;
         }
     }

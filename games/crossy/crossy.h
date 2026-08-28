@@ -26,8 +26,8 @@
 #define kRailWarnTileId 0xA6U
 // odd world lanes take the second grass tile, so a lane boundary reads even in grayscale
 #define kGrassAltTileId 0xA7U
-// the calm half of a water lane; glints ride the top row only, so one lane reads as one band
-#define kWaterCalmTileId 0xA8U
+// water follows the same parity rule: one tile fills a whole lane, so a boundary is a shade step
+#define kWaterDarkTileId 0xA8U
 
 // a lane is one of four kinds; the kind is cached per ring slot
 #define kLaneGrass 0U
@@ -46,12 +46,15 @@
 // inverted space is a solid dark cell, so it is both the popup's fill and its blank glyph
 #define kPopupFillTileId kInvFontFirstTile
 
+// every sprite is 8x16, so a tile id's low bit is ignored and art comes in consecutive pairs
+#define kTilesPerSprite 2U
 // sprites: the chick at rest and in flight, then the ten hud digits
 #define kChickTileId 0xE0U
-#define kChickHopTileId 0xE1U
-#define kChickFrames 2U
-#define kDigitTileId 0xD0U
+#define kChickHopTileId 0xE2U
+#define kChickTileCount 4U
+#define kDigitTileId 0xC8U
 #define kDigitCount 10U
+#define kDigitTileCount 20U
 
 // the bg ring is 32 rows tall, so 16 lanes are buffered and scy wraps for free
 #define kMapRows 32U
@@ -65,10 +68,12 @@
 // the chick may trail the camera by two lanes and still be fully on screen
 #define kMaxLanesBehind 2U
 
-// the chick is one 8x8 sprite centered in its 16 px cell
+// the chick is one 8x16 sprite centered across its 16 px cell; its art is 12 px tall
 #define kChickCellInset 4U
 #define kChickHalfPx 4U
-// on water the chick takes the lane's top half, clear of the log's scanlines entirely
+// two px of grass under the sprite's top edge centers the art in the cell
+#define kChickLaneInset 2U
+// on water the chick sits at the lane's top edge, so its head clears the log's crown
 #define kChickWaterInset 0U
 #define kChickSpawnCol 4U
 // oam coords are offset by 8,16 from the screen
@@ -120,8 +125,8 @@
 // the glyph badge is 7 of the cell's 8 px, so the lit run centers one px right of the cells
 #define kHoverBestCenterOamX 89U
 
-// movers: cars and logs ride one wrapping track per lane, y centered in the lane
-#define kMoverLaneInset 4U
+// movers: cars and logs ride one wrapping track per lane, drawn from the lane's top edge
+// an 8x16 sprite parked there covers exactly the lane, so one scanline still sees one lane
 // two movers share a lane's speed half a lap apart, so their gap never closes
 #define kMoversPerLane 2U
 // a car's lap is the whole 256 px an 8.8 position wraps through for free
@@ -139,14 +144,13 @@
 #define kMoverFirstSprite 4U
 #define kMoverSprites 30U
 // 5 water lanes x 6 log parts is the pool exactly, as is 4 water lanes plus one 6 part train
-// 36 of 40 oam with the eagle, and a water lane's 6 log parts plus 3 hud digits plus the chick is 10
-// so the hud stays at screen y 8, where only the top lane's movers ever share its scanlines
-// the chick never reaches those scanlines, so play's worst line is 6 train + 3 hud
+// 36 of 40 oam with the eagle; 8x16 changed no count, and a mover still spans only its own lane
+// so a scanline sees at most 6 movers: play's worst line is 6 train + 3 hud digits
 // the swoop hides the digits, leaving 6 train + 2 eagle + 1 chick: still inside the dmg's 10
 
-// cars: 16 px of two 8x8 sprites in tile id order
-#define kCarTileId 0xC0U
-#define kCarTileCount 2U
+// cars: 16x16 of two 8x16 sprites, its left half then its right
+#define kCarTileId 0xB0U
+#define kCarTileCount 4U
 #define kCarSprites 2U
 #define kCarHalfPx 8U
 // five speeds an eighth of a pixel apart, off whichever minimum the ramp tier gives
@@ -155,18 +159,19 @@
 // centers closer than this collide: 8 px of car plus 4 px of chick, minus a little mercy
 #define kCarHitPx 10
 
-// logs: 24 px of three 8x8 sprites, all the same tile
-#define kLogTileId 0xC4U
-#define kLogTileCount 1U
+// logs: 24x16 of three 8x16 sprites, one tile pair each, left end to right end
+#define kLogTileId 0xB4U
+#define kLogTileCount 6U
 #define kLogSprites 3U
 #define kLogHalfPx 12U
-// the lane's lower half: dmg's lower oam x wins, so a log level with the chick would bury its rider
-#define kLogLaneInset 8U
 // four speeds an eighth of a pixel apart, off whichever minimum the ramp tier gives
 #define kLogSpeedStep 32U
 #define kLogSpeedSteps 4U
 // the chick rides while its center is within 12 px of a log's
 #define kLogRidePx 12
+// a ride snaps the chick onto the log's own 8 px sprite grid, so their oam x match exactly
+// dmg breaks an oam x tie by index and the chick is sprite 0, so it draws over its log
+#define kLogSnapPx 8
 // 8.8 left x 152, so the chick's center reaches 156: the last px a ride survives
 #define kRideMaxFixed 0x9800U
 
@@ -202,9 +207,9 @@
 // the second ding lands halfway through the warning
 #define kTrackBellGap 30U
 
-// the train: six 8x8 sprites of one solid 48 px block, drawn from four tiles
-#define kTrainTileId 0xC8U
-#define kTrainTileCount 4U
+// the train: six 8x16 sprites of one solid 48x16 block, drawn from four tile pairs
+#define kTrainTileId 0xC0U
+#define kTrainTileCount 8U
 #define kTrainSprites 6U
 #define kTrainPx 48
 // 5 px a frame from just off the right edge walks the whole block past the left one in 42 frames
@@ -222,9 +227,9 @@
 
 // the eagle: ten seconds without reaching a new lane and the run is over
 #define kEagleIdleFrames 600U
-// one 16x8 bird of two 8x8 sprites in tile id order
-#define kEagleTileId 0xCCU
-#define kEagleTileCount 2U
+// one 16x16 bird of two 8x16 sprites in tile id order
+#define kEagleTileId 0xBCU
+#define kEagleTileCount 4U
 #define kEagleSprites 2U
 #define kEagleHalfPx 8U
 // two fixed slots past the mover pool: 36 of 40 oam in the worst case

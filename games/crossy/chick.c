@@ -18,6 +18,8 @@ static int8_t slide_y;
 static uint8_t slide_scy;
 // 1 while the camera slide came from a hop; a creep's slide drags the chick down screen instead
 static uint8_t slide_hop;
+// 1 once a log has been boarded; clearing it is what makes the next landing snap onto one
+static uint8_t riding;
 
 static uint8_t hopping(void) {
     return (slide_x != 0 || slide_y != 0 || slide_scy != 0U) ? 1U : 0U;
@@ -120,8 +122,9 @@ void chick_init(void) {
     slide_y = 0;
     slide_scy = 0;
     slide_hop = 0;
+    riding = 0;
     OBP0_REG = kChickObp;
-    set_sprite_data(kChickTileId, kChickFrames, kChickTiles);
+    set_sprite_data(kChickTileId, kChickTileCount, kChickTiles);
     set_sprite_prop(kChickSprite, 0);
     chick_draw();
 }
@@ -157,17 +160,39 @@ void chick_update(uint8_t pressed) {
     terrain_apply_scy(slide_scy);
 }
 
+// the nearest log part to stand on, as an 8.8 offset from the log's own track position
+static uint16_t board_offset(uint16_t pos) {
+    int16_t d = (int16_t)((int16_t)chick_center_x() - (int16_t)(uint8_t)(pos >> 8));
+    int16_t snapped = 0;
+
+    if (d > kLogSnapPx / 2) {
+        snapped = kLogSnapPx;
+    } else if (d < -(kLogSnapPx / 2)) {
+        snapped = -kLogSnapPx;
+    }
+    // the sprite's left edge, so the chick's oam x lands exactly on one log part's
+    return (uint16_t)((uint16_t)(snapped - (int16_t)kChickHalfPx) << 8);
+}
+
 uint8_t chick_afloat(void) {
     int16_t step;
+    uint16_t pos;
 
     // a hop is airborne, so the water only judges the chick once it lands
     if (hopping() || !terrain_is_water(lane)) {
+        riding = 0;
         return 1;
     }
-    if (!movers_log_ride(lane, chick_center_x(), &step)) {
+    if (!movers_log_ride(lane, chick_center_x(), &step, &pos)) {
+        riding = 0;
         return 0;
     }
-    px_x = (uint16_t)(px_x + (uint16_t)step);
+    if (riding == 0U) {
+        px_x = (uint16_t)(pos + board_offset(pos));
+        riding = 1;
+    } else {
+        px_x = (uint16_t)(px_x + (uint16_t)step);
+    }
     // px_x wraps near 0xffff once a log drags the chick left of the screen, so one test covers both edges
     return px_x <= kRideMaxFixed ? 1U : 0U;
 }
@@ -194,7 +219,7 @@ uint8_t chick_center_x(void) {
 }
 
 uint8_t chick_screen_y(void) {
-    uint8_t inset = terrain_is_water(lane) ? kChickWaterInset : kChickCellInset;
+    uint8_t inset = terrain_is_water(lane) ? kChickWaterInset : kChickLaneInset;
     // a hop's slide is the world moving under a still chick, so its lift cancels the lane's
     uint8_t lift = slide_hop != 0U ? slide_scy : 0U;
 

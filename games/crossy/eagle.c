@@ -39,7 +39,8 @@ void eagle_init(void) {
     set_sprite_data(kEagleTileId, kEagleTileCount, kEagleTiles);
     for (i = 0; i < kEagleSprites; ++i) {
         set_sprite_prop((uint8_t)(kEagleFirstSprite + i), 0);
-        set_sprite_tile((uint8_t)(kEagleFirstSprite + i), (uint8_t)(kEagleTileId + i));
+        set_sprite_tile((uint8_t)(kEagleFirstSprite + i),
+                        (uint8_t)(kEagleTileId + (uint8_t)(i * kTilesPerSprite)));
         park((uint8_t)(kEagleFirstSprite + i));
     }
 }

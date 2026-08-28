@@ -9,7 +9,7 @@
 void hud_init(void) {
     uint8_t i;
 
-    set_sprite_data(kDigitTileId, kDigitCount, kDigitTiles);
+    set_sprite_data(kDigitTileId, kDigitTileCount, kDigitTiles);
     for (i = 0; i < kHudDigits; ++i) {
         set_sprite_prop((uint8_t)(kHudFirstSprite + i), 0);
     }
@@ -44,7 +44,9 @@ static void draw_digits(uint16_t value, uint8_t center_x, uint8_t oam_y) {
     for (i = 0; i < kHudDigits; ++i) {
         s = (uint8_t)(kHudFirstSprite + i);
         if (i < shown) {
-            set_sprite_tile(s, (uint8_t)(kDigitTileId + digit[kHudDigits - shown + i]));
+            // the glyph badge is the pair's top tile, so a digit is two tiles on from the last
+            set_sprite_tile(
+                s, (uint8_t)(kDigitTileId + (uint8_t)(digit[kHudDigits - shown + i] * kTilesPerSprite)));
             move_sprite(s, (uint8_t)(x + (uint8_t)(i * kDigitWidthPx)), oam_y);
         } else {
             // oam y 0 parks a sprite entirely above the screen
