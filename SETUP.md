@@ -74,26 +74,24 @@ ctest --test-dir build --output-on-failure
 ## 4. Tetris setup (Adjustris)
 
 Real Tetris is copyrighted, so it isn't included. The repo ships **Adjustris**,
-a free, public-domain Tetris-style game, renamed to `tetris.gb`.
+a free, public-domain Tetris-style game by Dave VanEe (tbsp), vendored at
+`assets/roms/adjustris.gb` — nothing to download.
 
-1. Download it:
-   ```
-   https://github.com/tbsp/Adjustris/releases/download/v1.1/adjustris.gb
-   ```
-2. Rename the downloaded file to `tetris.gb`.
-3. Optional: run `tools/patch_spin_icons.py` on it. Adjustris's piece editor
+1. Copy `assets/roms/adjustris.gb` into your `dist` folder next to
+   `gbemu-sdl.exe` and rename the copy to `tetris.gb` (the one-command
+   installer in step 7 does this for you).
+2. Optional: run `tools/patch_spin_icons.py` on it. Adjustris's piece editor
    shows cryptic glyphs for whether a piece spins fully or just wobbles; this
    script swaps them for a plain check mark and a bold X. It edits the rom's
    tile data in place (leaving a `.bak` copy next to it) and works on any
    unpatched Adjustris rom:
    ```
-   python tools/patch_spin_icons.py tetris.gb
+   python tools/patch_spin_icons.py dist/tetris.gb
    ```
-4. Drop `tetris.gb` next to `gbemu-sdl.exe` (i.e. in your `dist` folder).
 
-`tools/fetch-test-roms.sh` also downloads this same file (as
-`tests/roms/vendor/demo.gb`) for use as a test/wasm-demo rom — that's a
-separate copy used by the test suite, not the one you play with.
+The same vendored rom doubles as the test suite's demo rom
+(`tools/fetch-test-roms.sh` copies it to `tests/roms/vendor/demo.gb`) and as
+the wasm build's embedded game.
 
 ## 5. Flappy Bird setup
 
@@ -156,9 +154,9 @@ What it does:
   (`assets/icons/gbemu.bmp`). If a `gbemu-sdl.exe` already exists in `dist`,
   it's kept as `gbemu-sdl.old.exe` (or `.old2.exe`, etc.) rather than
   overwritten — it never touches your `.sav`/`.state` save files.
-- Fetches `tetris.gb` (reusing one already in `dist`, or the test-suite's
-  vendored copy, or downloading Adjustris fresh) and writes
-  `tetris.cmd` / `flappy.cmd` / `crossy.cmd` launcher scripts into `dist`.
+- Copies the vendored Adjustris rom in as `tetris.gb` (reusing one already in
+  `dist` if present) and writes `tetris.cmd` / `flappy.cmd` / `crossy.cmd`
+  launcher scripts into `dist`.
 - Creates per-user Start Menu shortcuts named `tetris`, `flappy`, and
   `crossy`, pointing at those launchers.
 

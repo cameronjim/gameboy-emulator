@@ -121,15 +121,8 @@ try {
         if (Test-Path $tetrisDest) {
             Write-Step "tetris.gb already present in dist, leaving it alone"
         } else {
-            $vendorDemo = Join-Path $RepoRoot "tests\roms\vendor\demo.gb"
-            if (Test-Path $vendorDemo) {
-                Write-Step "copying tests/roms/vendor/demo.gb as tetris.gb"
-                Copy-Item -Path $vendorDemo -Destination $tetrisDest -Force
-            } else {
-                Write-Step "downloading adjustris as tetris.gb"
-                $url = "https://github.com/tbsp/Adjustris/releases/download/v1.1/adjustris.gb"
-                Invoke-WebRequest -Uri $url -OutFile $tetrisDest
-            }
+            Write-Step "copying assets/roms/adjustris.gb as tetris.gb"
+            Copy-Item -Path (Join-Path $RepoRoot "assets\roms\adjustris.gb") -Destination $tetrisDest -Force
             Write-Host "note: run 'python tools/patch_spin_icons.py `"$tetrisDest`"' to swap the piece-editor glyphs (optional, not run by this script)" -ForegroundColor Yellow
         }
     } else {
