@@ -165,3 +165,45 @@ inline uint32_t colorize_crossy(uint16_t id, uint8_t shade) {
     // font, hud digits and anything unmapped keep the plain gray look
     return kGrayShades[s];
 }
+
+// flappy wears super mario colors: sky blue, pipe green, brick ground.
+// the rom clears bg cells to the font's space glyph, so bg shade 0 is the sky.
+inline constexpr uint32_t kFlappySkyBlue = 0xFF5C94FCu;
+// font strokes are shade 3; the title and hud text reads white on the sky
+inline constexpr Palette4 kFlappyText = {kFlappySkyBlue, kWhite, kWhite, kWhite};
+// the popup's inverted glyphs flip shade 0 and 3: white strokes on a dark card
+inline constexpr Palette4 kFlappyPopup = {kWhite, 0xFF9C9CA8u, 0xFF4C4C55u, 0xFF102040u};
+// pipe art: 1 highlight, 2 fill, 3 outline
+inline constexpr Palette4 kFlappyPipe = {kFlappySkyBlue, 0xFF80D010u, 0xFF00A800u, 0xFF0A3806u};
+// ground art: 1 brick fill, 2 speckles, 3 the rim row
+inline constexpr Palette4 kFlappyGround = {kFlappySkyBlue, 0xFFC84C0Cu, 0xFFFC9838u, 0xFF40140Cu};
+// digit sprites: 1 is the glyph, the rest its dark halo over a pipe
+inline constexpr Palette4 kFlappyDigit = {kFlappySkyBlue, kWhite, 0xFF201810u, 0xFF201810u};
+// bird art: 1 body, 2 wing and beak, 3 outline
+inline constexpr Palette4 kFlappyBird = {kFlappySkyBlue, 0xFFFCD800u, 0xFFFC6000u, 0xFF503000u};
+
+// id: low byte tile index, bit 8 sprite. flappy's bg and sprite tiles occupy
+// disjoint pinned ranges, so the tile index alone picks the palette.
+inline uint32_t colorize_flappy(uint16_t id, uint8_t shade) {
+    const uint8_t tile = static_cast<uint8_t>(id & 0xFFu);
+    const uint8_t s = shade & 0x3u;
+    if (tile <= 0x5F) {
+        return kFlappyText[s];
+    }
+    if (tile <= 0x9F) {
+        return kFlappyPopup[s];
+    }
+    if (tile >= 0xA0 && tile <= 0xA3) {
+        return kFlappyPipe[s];
+    }
+    if (tile == 0xB0) {
+        return kFlappyGround[s];
+    }
+    if (tile >= 0xD0 && tile <= 0xD9) {
+        return kFlappyDigit[s];
+    }
+    if (tile >= 0xE0 && tile <= 0xE2) {
+        return kFlappyBird[s];
+    }
+    return kGrayShades[s];
+}

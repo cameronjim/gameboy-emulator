@@ -189,3 +189,70 @@ TEST_CASE("colorize_crossy_digits_and_font_stay_gray") {
     REQUIRE(colorize_crossy(0x1C8, 2) == colorize(0x1C8, 2, 3, 3, 0x0000, 0x0000));
     REQUIRE(colorize_crossy(0x1C8, 3) == colorize(0x1C8, 3, 3, 3, 0x0000, 0x0000));
 }
+
+TEST_CASE("colorize_flappy_sky_is_mario_blue") {
+    // every bg tile's shade 0 is the sky, so the whole field reads as one blue
+    for (const uint16_t tile : std::array<uint16_t, 4>{0x00, 0xA0, 0xB0, 0x41}) {
+        const uint32_t c = colorize_flappy(tile, 0);
+        REQUIRE(c == kFlappySkyBlue);
+        REQUIRE(blue_of(c) > red_of(c));
+        REQUIRE(blue_of(c) > green_of(c));
+    }
+    // title text is white strokes over that sky
+    REQUIRE(colorize_flappy(0x41, 3) == kWhite);
+}
+
+TEST_CASE("colorize_flappy_pipes_are_mario_green") {
+    // body fill, highlight edge and outline all read as green
+    for (const uint16_t tile : std::array<uint16_t, 4>{0xA0, 0xA1, 0xA2, 0xA3}) {
+        for (uint8_t shade = 1; shade < 4; ++shade) {
+            const uint32_t c = colorize_flappy(tile, shade);
+            REQUIRE(green_of(c) > red_of(c));
+            REQUIRE(green_of(c) > blue_of(c));
+        }
+    }
+    // the outline is darker than the fill, the highlight lighter
+    REQUIRE(green_of(colorize_flappy(0xA0, 3)) < green_of(colorize_flappy(0xA0, 2)));
+    REQUIRE(red_of(colorize_flappy(0xA0, 1)) > red_of(colorize_flappy(0xA0, 2)));
+}
+
+TEST_CASE("colorize_flappy_ground_is_brick") {
+    // brick fill and speckles are warm: red leads green leads blue
+    for (uint8_t shade = 1; shade < 3; ++shade) {
+        const uint32_t c = colorize_flappy(0xB0, shade);
+        REQUIRE(red_of(c) > green_of(c));
+        REQUIRE(green_of(c) > blue_of(c));
+    }
+    // the rim stays dark so the ground line still reads
+    REQUIRE(red_of(colorize_flappy(0xB0, 3)) < 0x60u);
+}
+
+TEST_CASE("colorize_flappy_bird_is_yellow_with_orange_accents") {
+    const uint32_t body = colorize_flappy(0x1E0, 1);
+    REQUIRE(red_of(body) > 0xE0u);
+    REQUIRE(green_of(body) > 0xC0u);
+    REQUIRE(blue_of(body) < 0x40u);
+    // all three flap frames wear the same feathers
+    REQUIRE(colorize_flappy(0x1E1, 1) == body);
+    REQUIRE(colorize_flappy(0x1E2, 1) == body);
+    const uint32_t beak = colorize_flappy(0x1E0, 2);
+    REQUIRE(red_of(beak) > green_of(beak) + 0x40u);
+    // the bird never vanishes into a pipe or the sky
+    for (uint8_t shade = 1; shade < 4; ++shade) {
+        REQUIRE(colorize_flappy(0x1E0, shade) != colorize_flappy(0xA0, shade));
+        REQUIRE(colorize_flappy(0x1E0, shade) != kFlappySkyBlue);
+    }
+}
+
+TEST_CASE("colorize_flappy_popup_and_digits_stay_legible") {
+    // inverted glyphs: white strokes (shade 0) on a dark card (shade 3)
+    REQUIRE(colorize_flappy(0x60, 0) == kWhite);
+    const uint32_t card = colorize_flappy(0x60, 3);
+    REQUIRE(red_of(card) < 0x40u);
+    REQUIRE(green_of(card) < 0x60u);
+    // hud digit sprites: white glyph in a dark halo
+    REQUIRE(colorize_flappy(0x1D0, 1) == kWhite);
+    REQUIRE(red_of(colorize_flappy(0x1D0, 3)) < 0x40u);
+    // unmapped tiles keep the plain gray look
+    REQUIRE(colorize_flappy(0xC0, 2) == kGrayShades[2]);
+}

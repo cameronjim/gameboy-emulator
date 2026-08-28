@@ -64,7 +64,7 @@ const char* cart_type_name(gb::CartType type) {
 }
 
 // which colorizer dresses the frame; unknown games stay plain gray
-enum class Look : uint8_t { Plain, Tetris, Crossy };
+enum class Look : uint8_t { Plain, Tetris, Crossy, Flappy };
 
 Look detect_look(std::span<const uint8_t> bytes) {
     const std::optional<gb::Cartridge> cart = gb::Cartridge::parse(bytes);
@@ -73,6 +73,9 @@ Look detect_look(std::span<const uint8_t> bytes) {
     }
     if (cart->title() == "CROSSY") {
         return Look::Crossy;
+    }
+    if (cart->title() == "FLAPPY") {
+        return Look::Flappy;
     }
     if (cart->title().rfind("TETRIS", 0) == 0) {
         return Look::Tetris;
@@ -84,6 +87,9 @@ uint32_t shade_pixel(Look look, uint16_t id, uint8_t shade, uint32_t x, uint32_t
                      uint16_t sprite_mask) {
     if (look == Look::Crossy) {
         return colorize_crossy(id, shade);
+    }
+    if (look == Look::Flappy) {
+        return colorize_flappy(id, shade);
     }
     return colorize(id, shade, x, y, block_mask, sprite_mask);
 }
