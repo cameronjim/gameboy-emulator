@@ -85,7 +85,12 @@ try {
 
     $dllSrc = Join-Path $Sdl2Prefix "bin\SDL2.dll"
     if (-not (Test-Path $dllSrc)) { Fail "SDL2.dll not found at $dllSrc" }
-    Copy-Item -Path $dllSrc -Destination (Join-Path $DistDir "SDL2.dll") -Force
+    # a running emulator locks the dll; the dll never changes between deploys, so keep going
+    try {
+        Copy-Item -Path $dllSrc -Destination (Join-Path $DistDir "SDL2.dll") -Force -ErrorAction Stop
+    } catch {
+        Write-Host "warning: SDL2.dll is in use (emulator running?), keeping the existing copy" -ForegroundColor Yellow
+    }
 
     Copy-Item -Path $flappySrc -Destination (Join-Path $DistDir "flappy.gb") -Force
     Copy-Item -Path $crossySrc -Destination (Join-Path $DistDir "crossy.gb") -Force
