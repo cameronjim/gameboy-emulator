@@ -18,6 +18,12 @@ static uint8_t rng_state;
 // lane records cached per ring slot, so a streamed row never re-rolls the rng
 static uint16_t lane_trees[kRingLanes];
 static uint8_t lane_kind[kRingLanes];
+// a track lane's phase machine, ticked only while the lane is on screen
+static uint8_t track_phase[kRingLanes];
+static uint16_t track_timer[kRingLanes];
+static int16_t train_x[kRingLanes];
+// the warning cell's current art, so vram is written only on a blink
+static uint8_t warn_shown[kRingLanes];
 // lanes come out in chunks; these carry the run of the chunk being generated
 static uint8_t chunk_kind;
 static uint8_t chunk_left;
@@ -62,11 +68,14 @@ static uint8_t next_gap(void) {
 }
 
 // grass and danger chunks alternate, so lanes 0..2 count as the run's opening grass chunk
-static uint8_t next_kind(void) {
+static uint8_t next_kind(uint16_t lane) {
     if (chunk_left == 0U) {
         if (chunk_kind != kLaneGrass) {
             chunk_kind = kLaneGrass;
             chunk_left = (uint8_t)(kGrassChunkMin + rng_next() % kGrassChunkSpan);
+        } else if (lane >= kTrackFirstLane && rng_next() % kTrackOdds == 0U) {
+            chunk_kind = kLaneTrack;
+            chunk_left = kTrackChunkLanes;
         } else if ((rng_next() & kRngTopBit) != 0U) {
             // this lcg's low bit flips every call, so the coin toss reads its top one
             chunk_kind = kLaneWater;
@@ -78,6 +87,17 @@ static uint8_t next_kind(void) {
     }
     --chunk_left;
     return chunk_kind;
+}
+
+static uint16_t quiet_frames(void) {
+    return (uint16_t)(kTrackQuietMin + (uint16_t)(rng_next() % kTrackQuietSpan));
+}
+
+static void track_init(uint8_t slot) {
+    track_phase[slot] = kTrackQuiet;
+    track_timer[slot] = quiet_frames();
+    train_x[slot] = kTrainOffX;
+    warn_shown[slot] = kRailWarnTileId;
 }
 
 static void generate_lane(uint16_t lane) {
@@ -100,10 +120,12 @@ static void generate_lane(uint16_t lane) {
     hi = (g < prev_gap) ? prev_gap : g;
 
     if (lane >= kPlainLanes) {
-        kind = next_kind();
+        kind = next_kind(lane);
     }
     chained = (lane != 0U && lane_kind[(uint8_t)(lane - 1U) & kRingLaneMask] == kind) ? 1U : 0U;
-    if (kind != kLaneGrass) {
+    if (kind == kLaneTrack) {
+        track_init(slot);
+    } else if (kind != kLaneGrass) {
         // asphalt and open water are both clear ground; their danger is what slides along them
         movers_lane_init(slot, (uint8_t)(kind == kLaneWater), tier, chained);
     } else if (lane >= kPlainLanes) {
@@ -130,6 +152,14 @@ static void draw_lane(uint16_t lane) {
     uint8_t x;
     uint8_t t;
 
+    if (lane_kind[slot] == kLaneTrack) {
+        for (c = 0; c < 2U * kScreenCols; ++c) {
+            lane_buf[c] = kRailTileId;
+        }
+        lane_buf[kTrackWarnCol] = kRailWarnTileId;
+        set_bkg_tiles(0, ring_row(lane), kScreenCols, 2, lane_buf);
+        return;
+    }
     for (c = 0; c < kGridCols; ++c) {
         x = (uint8_t)(c << 1);
         if (lane_kind[slot] == kLaneRoad) {
@@ -183,9 +213,16 @@ void terrain_init(uint8_t seed) {
     set_bkg_data(kRoadStripeTileId, 1, kRoadStripeTile);
     set_bkg_data(kWaterTileId, 1, kWaterTile);
 
+    set_bkg_data(kRailTileId, 1, kRailTile);
+    set_bkg_data(kRailWarnTileId, 1, kRailWarnTile);
+
     for (i = 0; i < kRingLanes; ++i) {
         lane_trees[i] = 0;
         lane_kind[i] = kLaneGrass;
+        track_phase[i] = kTrackQuiet;
+        track_timer[i] = kTrackQuietMin;
+        train_x[i] = kTrainOffX;
+        warn_shown[i] = kRailWarnTileId;
     }
 
     SCX_REG = 0;
@@ -208,6 +245,93 @@ uint8_t terrain_is_road(uint16_t lane) {
 
 uint8_t terrain_is_water(uint16_t lane) {
     return lane_kind[lane & kRingLaneMask] == kLaneWater ? 1U : 0U;
+}
+
+uint8_t terrain_is_track(uint16_t lane) {
+    return lane_kind[lane & kRingLaneMask] == kLaneTrack ? 1U : 0U;
+}
+
+int16_t terrain_train_x(uint16_t lane) {
+    uint8_t slot = (uint8_t)(lane & kRingLaneMask);
+
+    if (lane_kind[slot] != kLaneTrack || track_phase[slot] != kTrackTrain) {
+        return kTrainOffX;
+    }
+    return train_x[slot];
+}
+
+uint8_t terrain_train_hit(uint16_t lane, uint8_t center_x) {
+    int16_t x = terrain_train_x(lane);
+    int16_t d;
+
+    if (x == kTrainOffX) {
+        return 0;
+    }
+    d = (int16_t)((int16_t)center_x - x);
+    return (d > -(int16_t)kChickHalfPx && d < (int16_t)(kTrainPx + kChickHalfPx)) ? 1U : 0U;
+}
+
+// the light holds its crossbuck except on the blink's off half; only a warning ever shows bare rail
+static uint8_t warn_art(uint8_t slot) {
+    uint8_t elapsed;
+
+    if (track_phase[slot] != kTrackWarn) {
+        return kRailWarnTileId;
+    }
+    elapsed = (uint8_t)(kTrackWarnFrames - track_timer[slot]);
+    return ((uint8_t)(elapsed / kTrackBlinkFrames) & 1U) != 0U ? kRailTileId : kRailWarnTileId;
+}
+
+// one lane's frame of the quiet -> warning -> train loop; reads 1 on the frames a bell is due
+static uint8_t tick_track(uint16_t lane) {
+    uint8_t slot = (uint8_t)(lane & kRingLaneMask);
+    uint8_t bell = 0;
+    uint8_t art;
+
+    if (track_phase[slot] == kTrackQuiet) {
+        --track_timer[slot];
+        if (track_timer[slot] == 0U) {
+            track_phase[slot] = kTrackWarn;
+            track_timer[slot] = kTrackWarnFrames;
+            bell = 1;
+        }
+    } else if (track_phase[slot] == kTrackWarn) {
+        --track_timer[slot];
+        if (track_timer[slot] == kTrackWarnFrames - kTrackBellGap) {
+            bell = 1;
+        }
+        if (track_timer[slot] == 0U) {
+            track_phase[slot] = kTrackTrain;
+            train_x[slot] = kTrainStartX;
+        }
+    } else {
+        train_x[slot] = (int16_t)(train_x[slot] - kTrainSpeedPx);
+        if (train_x[slot] <= -(int16_t)kTrainPx) {
+            track_phase[slot] = kTrackQuiet;
+            track_timer[slot] = quiet_frames();
+            train_x[slot] = kTrainOffX;
+        }
+    }
+
+    art = warn_art(slot);
+    if (art != warn_shown[slot]) {
+        warn_shown[slot] = art;
+        set_bkg_tiles(kTrackWarnCol, ring_row(lane), 1, 1, &warn_shown[slot]);
+    }
+    return bell;
+}
+
+uint8_t terrain_tick_tracks(void) {
+    uint16_t lane = (cam_lane > kMaxLanesBehind) ? (uint16_t)(cam_lane - kMaxLanesBehind) : 0U;
+    uint16_t last = (uint16_t)(cam_lane + kLanesAhead);
+    uint8_t bell = 0;
+
+    for (; lane <= last; ++lane) {
+        if (lane_kind[lane & kRingLaneMask] == kLaneTrack) {
+            bell = (uint8_t)(bell | tick_track(lane));
+        }
+    }
+    return bell;
 }
 
 uint8_t terrain_lane_screen_y(uint16_t lane) {

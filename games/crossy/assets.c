@@ -59,6 +59,30 @@ const uint8_t kWaterTile[16] = {
     0xFF, 0x00, // 11111111
 };
 
+// pale ballast between dark ties, with one black rail across the middle
+const uint8_t kRailTile[16] = {
+    0x33, 0xCC, // 22112211
+    0x33, 0xCC, // 22112211
+    0x33, 0xCC, // 22112211
+    0xFF, 0xFF, // 33333333
+    0x33, 0xCC, // 22112211
+    0x33, 0xCC, // 22112211
+    0x33, 0xCC, // 22112211
+    0x33, 0xCC, // 22112211
+};
+
+// a black crossbuck cell: the x reads as a warning even at one tile
+const uint8_t kRailWarnTile[16] = {
+    0xFF, 0xFF, // 33333333
+    0xBD, 0xBD, // 3.3333.3
+    0xDB, 0xDB, // 33.33.33
+    0xE7, 0xE7, // 333..333
+    0xE7, 0xE7, // 333..333
+    0xDB, 0xDB, // 33.33.33
+    0xBD, 0xBD, // 3.3333.3
+    0xFF, 0xFF, // 33333333
+};
+
 // one 8x8 slab of dark log with black bark grain, tiled three times across
 const uint8_t kLogTile[16] = {
     0xFF, 0xFF, // 33333333
@@ -89,6 +113,42 @@ const uint8_t kCarTiles[32] = {
     0xFF, 0x00, // 11111111
     0x8C, 0x0C, // 1...33..
     0x00, 0x00, // ........
+};
+
+// one 32x8 train as four tiles in id order; every pixel is opaque, so the sweep is one solid block
+const uint8_t kTrainTiles[64] = {
+    0xFF, 0xFF, // 33333333
+    0x80, 0xFF, // 32222222
+    0xB0, 0xCF, // 32112222
+    0xB0, 0xCF, // 32112222
+    0x80, 0xFF, // 32222222
+    0xFF, 0xFF, // 33333333
+    0x66, 0xFF, // 23322332
+    0x00, 0xFF, // 22222222
+    0xFF, 0xFF, // 33333333
+    0x00, 0xFF, // 22222222
+    0x60, 0x9F, // 21122222
+    0x60, 0x9F, // 21122222
+    0x00, 0xFF, // 22222222
+    0xFF, 0xFF, // 33333333
+    0x66, 0xFF, // 23322332
+    0x00, 0xFF, // 22222222
+    0xFF, 0xFF, // 33333333
+    0x00, 0xFF, // 22222222
+    0x06, 0xF9, // 22222112
+    0x06, 0xF9, // 22222112
+    0x00, 0xFF, // 22222222
+    0xFF, 0xFF, // 33333333
+    0x66, 0xFF, // 23322332
+    0x00, 0xFF, // 22222222
+    0xFF, 0xFF, // 33333333
+    0x01, 0xFF, // 22222223
+    0x0D, 0xF3, // 22221123
+    0x0D, 0xF3, // 22221123
+    0x01, 0xFF, // 22222223
+    0xFF, 0xFF, // 33333333
+    0x66, 0xFF, // 23322332
+    0x00, 0xFF, // 22222222
 };
 
 // one 16x8 eagle as two tiles in id order: its left wing then its right, body across the seam

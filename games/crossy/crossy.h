@@ -25,11 +25,14 @@
 #define kRoadTileId 0xA2U
 #define kRoadStripeTileId 0xA3U
 #define kWaterTileId 0xA4U
+#define kRailTileId 0xA5U
+#define kRailWarnTileId 0xA6U
 
-// a lane is one of three kinds; the kind is cached per ring slot
+// a lane is one of four kinds; the kind is cached per ring slot
 #define kLaneGrass 0U
 #define kLaneRoad 1U
 #define kLaneWater 2U
+#define kLaneTrack 3U
 
 // gbdk's ibm font lands ascii 0x20-0x7f on tiles 0x00-0x5f
 #define kFontFirstChar 0x20U
@@ -124,6 +127,7 @@
 #define kMoverSprites 30U
 // 34 of 40 oam, and a water lane's 6 log parts plus 3 hud digits plus the chick is the dmg's 10
 // so the hud stays at screen y 8, where only the top lane's movers ever share its scanlines
+// a track lane borrows 4 of the same slots, so its worst scanline is 4 train + 2 eagle + 3 hud
 
 // cars: 16 px of two 8x8 sprites in tile id order
 #define kCarTileId 0xC0U
@@ -162,8 +166,43 @@
 // trees a grass lane may carry; the span rule still leaves the guaranteed path open
 #define kRampTreesList {4U, 4U, 5U, 5U}
 
+// train tracks: a danger chunk may roll a single track lane once the run has some distance on it
+#define kTrackFirstLane 15U
+// one danger chunk in three past that lane is a track; the roll only happens there, so early
+// worlds keep the exact rng sequence they had before tracks existed
+#define kTrackOdds 3U
+#define kTrackChunkLanes 1U
+// the warning light is one 8x8 cell, a tile right of the lane's center and clear of the spawn column
+#define kTrackWarnCol 10U
+
+// the per lane phase machine, seeded from the lane rng so two tracks are never in step
+#define kTrackQuiet 0U
+#define kTrackWarn 1U
+#define kTrackTrain 2U
+#define kTrackQuietMin 180U
+#define kTrackQuietSpan 241U // 180..420 frames of calm
+#define kTrackWarnFrames 60U
+// the light swaps art every quarter of the warning, so it blinks four times before the train
+#define kTrackBlinkFrames 15U
+// the second ding lands halfway through the warning
+#define kTrackBellGap 30U
+
+// the train: four 8x8 sprites in tile id order, one solid 32 px block
+#define kTrainTileId 0xC8U
+#define kTrainSprites 4U
+#define kTrainPx 32
+// 5 px a frame from just off the right edge clears the whole screen in 39 frames
+#define kTrainSpeedPx 5
+#define kTrainStartX 160
+// a position the sweep never takes, so one value means "no train on this lane"
+#define kTrainOffX 256
+#define kScreenWidthPx 160
+
 // the camera advances a lane of its own every four seconds; any hop driven advance restarts it
 #define kCreepFrames 240U
+
+// the score chimes every tenth lane
+#define kScoreChime 10U
 
 // the eagle: ten seconds without reaching a new lane and the run is over
 #define kEagleIdleFrames 600U
