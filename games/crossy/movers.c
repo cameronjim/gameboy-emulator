@@ -62,12 +62,32 @@ static uint8_t draw_mover(uint8_t sprite, uint8_t tx, uint8_t y, uint8_t water) 
     return sprite;
 }
 
+// the train is one solid 32 px block; the pool lends it four slots, as a road lane's two cars do
+static uint8_t draw_train(uint8_t sprite, uint16_t lane) {
+    int16_t x = terrain_train_x(lane);
+    uint8_t y = (uint8_t)(terrain_lane_screen_y(lane) + kMoverLaneInset + kOamYOffset);
+    uint8_t i;
+
+    for (i = 0; i < kTrainSprites; ++i) {
+        if (x <= -(int16_t)kSpritePx || x >= (int16_t)kScreenWidthPx) {
+            park(sprite);
+        } else {
+            set_sprite_tile(sprite, (uint8_t)(kTrainTileId + i));
+            move_sprite(sprite, (uint8_t)(x + kOamXOffset), y);
+        }
+        x = (int16_t)(x + kSpritePx);
+        ++sprite;
+    }
+    return sprite;
+}
+
 void movers_init(uint8_t seed) {
     uint8_t i;
 
     rng_state = seed;
     set_sprite_data(kCarTileId, kCarTileCount, kCarTiles);
     set_sprite_data(kLogTileId, kLogTileCount, kLogTile);
+    set_sprite_data(kTrainTileId, kTrainSprites, kTrainTiles);
     for (i = 0; i < kMoverSprites; ++i) {
         set_sprite_prop((uint8_t)(kMoverFirstSprite + i), 0);
         park((uint8_t)(kMoverFirstSprite + i));
@@ -117,6 +137,13 @@ void movers_update(void) {
     uint8_t y;
 
     for (; lane <= last; ++lane) {
+        if (terrain_is_track(lane) != 0U) {
+            if ((uint8_t)(sprite + kTrainSprites) > pool_end) {
+                break;
+            }
+            sprite = draw_train(sprite, lane);
+            continue;
+        }
         water = terrain_is_water(lane);
         if (water == 0U && terrain_is_road(lane) == 0U) {
             continue;
