@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -38,12 +39,32 @@ constexpr uint32_t kTitleRow = 6;
 constexpr uint32_t kPromptRow = 10;
 constexpr uint32_t kBestRow = 12;
 
-// the tile contract: grass and tree on the bg, chick and digits as sprites
+// the tile contract: terrain on the bg, chick, cars and digits as sprites
 constexpr uint8_t kGrassTileId = 0xA0;
 constexpr uint8_t kTreeTileId = 0xA1;
+constexpr uint8_t kRoadTileId = 0xA2;
+constexpr uint8_t kRoadStripeTileId = 0xA3;
 constexpr uint8_t kChickTileId = 0xE0;
 constexpr uint8_t kChickHopTileId = 0xE1;
+constexpr uint8_t kCarFrontTileId = 0xC0;
+constexpr uint8_t kCarRearTileId = 0xC1;
 constexpr uint8_t kDigitTileId = 0xD0;
+
+// the popup draws from an inverted copy of the font parked at 0x60
+constexpr uint8_t kInvFontFirstTile = 0x60;
+constexpr uint8_t kInvFontLastTile = 0x9F;
+
+// the popup band covers screen rows 5..11 of 18
+constexpr size_t kPopupTopPx = 40;
+constexpr size_t kPopupEndPx = 96;
+constexpr uint32_t kPopupPromptRow = 10;
+
+// input is ignored for this many frames after a death
+constexpr uint32_t kLockoutFrames = 20;
+
+bool is_road_tile(int tile) {
+    return tile == kRoadTileId || tile == kRoadStripeTileId;
+}
 
 // the grid: 10 columns of 16 px, the chick's cell inset 4 px inside its own
 constexpr int kGridCols = 10;
@@ -267,9 +288,10 @@ void tap(gb::Gameboy& gameboy, gb::Button button) {
 // entering play blanks the lcd for a few frames, so settle before reading the screen
 constexpr uint32_t kEnterPlayFrames = 8;
 
-void start_play(gb::Gameboy& gameboy, const std::vector<uint8_t>& rom) {
+// the rng seeds from the hover frame count, so extra hover frames pick another world
+void start_play(gb::Gameboy& gameboy, const std::vector<uint8_t>& rom, uint32_t hover_extra = 0) {
     REQUIRE(gameboy.load_rom(rom));
-    run(gameboy, kBootFrames);
+    run(gameboy, kBootFrames + hover_extra);
     gameboy.set_button(gb::Button::Start, true);
     gameboy.run_frame();
     gameboy.run_frame();
@@ -287,16 +309,252 @@ gb::Button button_for(int move) {
     return gb::Button::Up;
 }
 
+// a car is 8 px tall at a 4 px lane inset, so it never crosses a 16 px band edge
+struct CarRun {
+    int band;
+    int x0;
+    int x1;
+};
+
+bool is_car_pixel(const gb::Gameboy& gameboy, int x, int y) {
+    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
+    const std::span<const uint8_t> fb = gameboy.framebuffer();
+    const size_t i = static_cast<size_t>(y) * gb::kLcdWidth + static_cast<size_t>(x);
+    const uint8_t tile = static_cast<uint8_t>(ids[i]);
+    return (ids[i] & 0x100u) != 0 && fb[i] != 0 && (tile == kCarFrontTileId || tile == kCarRearTileId);
+}
+
+constexpr int kBands = 9;
+constexpr int kBandPx = 16;
+
+std::vector<CarRun> car_runs(const gb::Gameboy& gameboy) {
+    std::vector<CarRun> runs;
+    for (int band = 0; band < kBands; ++band) {
+        int open = -1;
+        for (int x = 0; x <= static_cast<int>(gb::kLcdWidth); ++x) {
+            bool lit = false;
+            for (int y = band * kBandPx; y < band * kBandPx + kBandPx && !lit; ++y) {
+                lit = x < static_cast<int>(gb::kLcdWidth) && is_car_pixel(gameboy, x, y);
+            }
+            if (lit && open < 0) {
+                open = x;
+            }
+            if (!lit && open >= 0) {
+                runs.push_back(CarRun{band, open, x - 1});
+                open = -1;
+            }
+        }
+    }
+    return runs;
+}
+
+// the game centers a car on its oam x, so an unclipped run of 16 gives that number back
+double car_center(const CarRun& run) {
+    if (run.x0 == 0 && run.x1 - run.x0 != 15) {
+        return run.x1 - 7;
+    }
+    return run.x0 + 8;
+}
+
+// the two cars of a lane sit half a track apart, so one number describes the lane
+constexpr double kCarPeriod = 128.0;
+
+double phase_delta(double a, double b) {
+    double d = std::fmod(a - b, kCarPeriod);
+    if (d < -kCarPeriod / 2) {
+        d += kCarPeriod;
+    }
+    if (d >= kCarPeriod / 2) {
+        d -= kCarPeriod;
+    }
+    return d;
+}
+
+constexpr double kNoPhase = -1000.0;
+
+double lane_phase(const gb::Gameboy& gameboy, int band) {
+    for (const CarRun& run : car_runs(gameboy)) {
+        if (run.band == band) {
+            return std::fmod(car_center(run), kCarPeriod);
+        }
+    }
+    return kNoPhase;
+}
+
+int chick_band(const Chick& c) {
+    return c.y / kBandPx;
+}
+
+// contiguous road lanes ahead of the chick, counted from the next lane up
+int road_chunk_ahead(const gb::Gameboy& gameboy, const Chick& c, int gcol) {
+    int n = 0;
+    while (n < 4 && is_road_tile(cell_tile(gameboy, c, n + 1, gcol))) {
+        ++n;
+    }
+    return n;
+}
+
+// one tap is two press frames plus the settle, and the hop commits on the first of them
+constexpr double kTapFrames = 14.0;
+constexpr uint32_t kMeasureFrames = 16;
+// the game kills at 10 px; the plan keeps this much clearance through the whole crossing
+constexpr double kPlanMargin = 18.0;
+// and the target lane is at least this clear at the moment the hop into it starts
+constexpr double kHopMargin = 24.0;
+
+struct Traffic {
+    double phase;
+    double v;
+};
+
+bool burst_is_safe(const std::vector<Traffic>& lanes, double x) {
+    for (size_t i = 0; i < lanes.size(); ++i) {
+        const double enter = static_cast<double>(i) * kTapFrames;
+        const double leave = enter + kTapFrames;
+        if (std::fabs(phase_delta(lanes[i].phase + lanes[i].v * enter, x)) < kHopMargin) {
+            return false;
+        }
+        for (double t = enter - 4; t <= leave + 6; t += 1.0) {
+            if (std::fabs(phase_delta(lanes[i].phase + lanes[i].v * t, x)) < kPlanMargin) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// speeds are eighths of a pixel per frame, so the sample snaps back to the exact one
+double snap_speed(double v) {
+    return std::round(v * 8.0) / 8.0;
+}
+
+bool read_traffic(const gb::Gameboy& gameboy, const Chick& c, int n, std::vector<double>& out) {
+    out.clear();
+    for (int k = 1; k <= n; ++k) {
+        const double phase = lane_phase(gameboy, chick_band(c) - k);
+        if (phase == kNoPhase) {
+            return false;
+        }
+        out.push_back(phase);
+    }
+    return true;
+}
+
+constexpr int kBurstAttempts = 60;
+constexpr uint32_t kBurstWaitFrames = 4;
+
+// crosses a whole road chunk in one burst, so the chick never idles on asphalt
+bool try_burst(gb::Gameboy& gameboy, int n) {
+    Chick c = chick_at(gameboy);
+    std::vector<double> first;
+    std::vector<double> second;
+    std::vector<Traffic> lanes;
+    if (!c.found || !read_traffic(gameboy, c, n, first)) {
+        return false;
+    }
+    // two samples of the same safe grass lane give every road lane its speed
+    run(gameboy, kMeasureFrames);
+    c = chick_at(gameboy);
+    if (!c.found || !read_traffic(gameboy, c, n, second)) {
+        return false;
+    }
+    for (int i = 0; i < n; ++i) {
+        lanes.push_back(
+            Traffic{second[static_cast<size_t>(i)],
+                    snap_speed(phase_delta(second[static_cast<size_t>(i)], first[static_cast<size_t>(i)]) /
+                               kMeasureFrames)});
+    }
+
+    for (int attempt = 0; attempt < kBurstAttempts; ++attempt) {
+        c = chick_at(gameboy);
+        if (!c.found || !read_traffic(gameboy, c, n, second)) {
+            return false;
+        }
+        for (int i = 0; i < n; ++i) {
+            lanes[static_cast<size_t>(i)].phase = second[static_cast<size_t>(i)];
+        }
+        if (burst_is_safe(lanes, chick_col(c) * kCellPx + 8)) {
+            for (int i = 0; i <= n; ++i) {
+                tap(gameboy, gb::Button::Up);
+            }
+            return true;
+        }
+        run(gameboy, kBurstWaitFrames);
+    }
+    return false;
+}
+
+// the nearest column whose chunk exit is clear, reachable along this lane
+int sidestep_move(const gb::Gameboy& gameboy, const Chick& c, int gcol, int n) {
+    for (int d = 1; d < kGridCols; ++d) {
+        for (int s = 0; s < 2; ++s) {
+            const int j = s == 0 ? gcol - d : gcol + d;
+            const int step = j > gcol ? 1 : -1;
+            bool clear = j >= 0 && j < kGridCols && !cell_blocked(gameboy, c, n + 1, j);
+            for (int t = gcol + step; clear && t != j + step; t += step) {
+                clear = !cell_blocked(gameboy, c, 0, t);
+            }
+            if (clear) {
+                return step > 0 ? kRight : kLeft;
+            }
+        }
+    }
+    return kNoMove;
+}
+
+// a step to either side of a safe lane, keeping the chunk's exit column clear
+bool shuffle_column(gb::Gameboy& gameboy, const Chick& c, int gcol, int n) {
+    for (int s = 0; s < 2; ++s) {
+        const int j = s == 0 ? gcol + 1 : gcol - 1;
+        if (j < 0 || j >= kGridCols || cell_blocked(gameboy, c, 0, j) || cell_blocked(gameboy, c, n + 1, j)) {
+            continue;
+        }
+        tap(gameboy, j > gcol ? gb::Button::Right : gb::Button::Left);
+        return true;
+    }
+    return false;
+}
+
+// one autopilot action: a plain hop, a sidestep, or a whole road chunk crossed at once
+bool autopilot_step(gb::Gameboy& gameboy) {
+    const Chick c = chick_at(gameboy);
+    if (!c.found) {
+        return false;
+    }
+    const int gcol = chick_col(c);
+    if (gcol < 0 || gcol >= kGridCols) {
+        return false;
+    }
+    const int n = road_chunk_ahead(gameboy, c, gcol);
+    if (n == 0) {
+        const int move = plan_move(gameboy, c, 7);
+        if (move == kNoMove) {
+            return false;
+        }
+        tap(gameboy, button_for(move));
+        return true;
+    }
+    if (cell_blocked(gameboy, c, n + 1, gcol)) {
+        const int move = sidestep_move(gameboy, c, gcol, n);
+        if (move == kNoMove) {
+            return false;
+        }
+        tap(gameboy, button_for(move));
+        return true;
+    }
+    if (try_burst(gameboy, n)) {
+        return true;
+    }
+    // no window from this column; another one lines the lanes up differently
+    return shuffle_column(gameboy, c, gcol, n);
+}
+
 // steers up the guaranteed path until the hud reaches target or the steps run out
 int autopilot(gb::Gameboy& gameboy, int target, int steps) {
     for (int i = 0; i < steps; ++i) {
-        const Chick c = chick_at(gameboy);
-        REQUIRE(c.found);
-        const int move = plan_move(gameboy, c, 7);
-        if (move == kNoMove) {
+        if (!autopilot_step(gameboy)) {
             break;
         }
-        tap(gameboy, button_for(move));
         if (hud_score(gameboy) >= target) {
             break;
         }
@@ -309,12 +567,127 @@ bool play_area_is_all_terrain(const gb::Gameboy& gameboy) {
     for (int cy = 0; cy < 18; ++cy) {
         for (int cx = 0; cx < 20; ++cx) {
             const int tile = bg_cell(gameboy, cx, cy);
-            if (tile != kNoTile && tile != kGrassTileId && tile != kTreeTileId) {
+            if (tile != kNoTile && tile != kGrassTileId && tile != kTreeTileId && !is_road_tile(tile)) {
                 return false;
             }
         }
     }
     return true;
+}
+
+// gbdk's ibm font lands ascii 0x20-0x7f on tiles 0x00-0x5f
+constexpr uint8_t font_tile(char c) {
+    return static_cast<uint8_t>(c - 0x20);
+}
+
+// the popup writes the inverted copy of the same glyph
+constexpr uint8_t popup_tile(char c) {
+    return static_cast<uint8_t>(kInvFontFirstTile + font_tile(c));
+}
+
+bool bg_has_tile(const gb::Gameboy& gameboy, uint8_t tile) {
+    for (uint16_t id : gameboy.framebuffer_tiles()) {
+        if ((id & 0x100u) == 0 && static_cast<uint8_t>(id) == tile) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool row_has_tile(const gb::Gameboy& gameboy, uint32_t row, uint8_t tile) {
+    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
+    for (size_t y = row * 8; y < row * 8 + 8; ++y) {
+        for (size_t x = 0; x < gb::kLcdWidth; ++x) {
+            const uint16_t id = ids[y * gb::kLcdWidth + x];
+            if ((id & 0x100u) == 0 && static_cast<uint8_t>(id) == tile) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool row_has_nonzero_digit(const gb::Gameboy& gameboy, uint32_t row) {
+    for (char c = '1'; c <= '9'; ++c) {
+        if (row_has_tile(gameboy, row, font_tile(c))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// inverted font cells only ever reach the screen through the game over popup
+bool popup_shown(const gb::Gameboy& gameboy) {
+    for (uint16_t id : gameboy.framebuffer_tiles()) {
+        if ((id & 0x100u) != 0) {
+            continue;
+        }
+        const uint8_t tile = static_cast<uint8_t>(id);
+        if (tile >= kInvFontFirstTile && tile <= kInvFontLastTile) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// plain font cells only ever reach the screen through the hover screen
+bool title_shown(const gb::Gameboy& gameboy) {
+    for (uint16_t id : gameboy.framebuffer_tiles()) {
+        if ((id & 0x100u) != 0) {
+            continue;
+        }
+        const uint8_t tile = static_cast<uint8_t>(id);
+        if (tile >= 0x21u && tile <= 0x5Fu) {
+            return true;
+        }
+    }
+    return false;
+}
+
+constexpr size_t kSaveBestOffset = 4;
+
+uint16_t sram_best(std::span<const uint8_t> ram) {
+    return static_cast<uint16_t>(ram[kSaveBestOffset] | (ram[kSaveBestOffset + 1] << 8));
+}
+
+bool sram_has_magic(std::span<const uint8_t> ram) {
+    return ram.size() > kSaveBestOffset + 1 && ram[0] == 'C' && ram[1] == 'R' && ram[2] == 'S' &&
+           ram[3] == 'Y';
+}
+
+void press(gb::Gameboy& gameboy, gb::Button button, uint32_t frames) {
+    gameboy.set_button(button, true);
+    run(gameboy, frames);
+    gameboy.set_button(button, false);
+}
+
+// the popup ignores input for a lockout, so wait it out before the dismissing press
+void dismiss(gb::Gameboy& gameboy, gb::Button button) {
+    run(gameboy, kLockoutFrames + 4);
+    press(gameboy, button, 2);
+    // twice the usual settle: the lcd is off while the hover screen is redrawn
+    run(gameboy, 2 * kEnterPlayFrames);
+}
+
+// hops onto the next road lane and stands there until the traffic finds the chick
+void die_under_a_car(gb::Gameboy& gameboy, int steps) {
+    for (int i = 0; i < steps; ++i) {
+        const Chick c = chick_at(gameboy);
+        REQUIRE(c.found);
+        if (road_chunk_ahead(gameboy, c, chick_col(c)) > 0) {
+            tap(gameboy, gb::Button::Up);
+            break;
+        }
+        REQUIRE(autopilot_step(gameboy));
+    }
+    for (uint32_t i = 0; i < 900; ++i) {
+        gameboy.run_frame();
+        if (popup_shown(gameboy)) {
+            run(gameboy, 6);
+            return;
+        }
+    }
+    FAIL("no car ever reached the chick");
 }
 
 std::vector<int> play_grid(const gb::Gameboy& gameboy) {
@@ -408,7 +781,7 @@ TEST_CASE("crossy_hover_shows_chick") {
     const Chick playing = chick_at(gameboy);
     REQUIRE(playing.found);
     REQUIRE(chick_col(playing) == 4);
-    // the run opens on plain grass, so the terrain is up before the first hop
+    // nothing but contract terrain is on screen, so the world is up before the first hop
     REQUIRE(play_area_is_all_terrain(gameboy));
 }
 
@@ -526,6 +899,234 @@ TEST_CASE("crossy_score_counts_furthest_lane") {
     // the camera never retreats and the score is the furthest lane, so a step back holds it
     tap(gameboy, gb::Button::Down);
     REQUIRE(hud_score(gameboy) == reached);
+}
+
+TEST_CASE("roads_appear_and_read_distinct") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+
+    bool found = false;
+    for (int step = 0; step < 20 && !found; ++step) {
+        const Chick c = chick_at(gameboy);
+        REQUIRE(c.found);
+        for (int k = 0; k <= 6 && !found; ++k) {
+            int road_cells = 0;
+            int tree_cells = 0;
+            for (int col = 0; col < kGridCols; ++col) {
+                const int tile = cell_tile(gameboy, c, k, col);
+                road_cells += is_road_tile(tile) ? 1 : 0;
+                tree_cells += tile == kTreeTileId ? 1 : 0;
+            }
+            if (road_cells == 0) {
+                continue;
+            }
+            // a road lane is asphalt end to end: always crossable, never a tree
+            REQUIRE(road_cells == kGridCols);
+            REQUIRE(tree_cells == 0);
+            found = true;
+        }
+        if (!found) {
+            REQUIRE(autopilot_step(gameboy));
+        }
+    }
+    REQUIRE(found);
+    REQUIRE(bg_has_tile(gameboy, kRoadTileId));
+    REQUIRE(bg_has_tile(gameboy, kRoadStripeTileId));
+}
+
+TEST_CASE("cars_move_and_keep_their_gap") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+
+    std::vector<CarRun> runs = car_runs(gameboy);
+    REQUIRE_FALSE(runs.empty());
+    const int band = runs.front().band;
+
+    double phase = lane_phase(gameboy, band);
+    REQUIRE(phase != kNoPhase);
+    double travelled = 0;
+    int sign = 0;
+    for (uint32_t frame = 0; frame < 120; ++frame) {
+        gameboy.run_frame();
+        const double now = lane_phase(gameboy, band);
+        REQUIRE(now != kNoPhase);
+        const double step = phase_delta(now, phase);
+        // 8.8 fixed point at under a pixel a frame, so a step is never a jump
+        REQUIRE(std::fabs(step) <= 1.0);
+        if (step != 0) {
+            if (sign == 0) {
+                sign = step > 0 ? 1 : -1;
+            }
+            REQUIRE((step > 0 ? 1 : -1) == sign);
+        }
+        travelled += step;
+        phase = now;
+
+        // the two cars share the lane's speed, so their gap can never close
+        std::vector<double> centers;
+        for (const CarRun& run : car_runs(gameboy)) {
+            if (run.band == band) {
+                centers.push_back(car_center(run));
+            }
+        }
+        for (size_t i = 1; i < centers.size(); ++i) {
+            for (size_t j = 0; j < i; ++j) {
+                REQUIRE(std::fabs(centers[i] - centers[j]) >= 40.0);
+            }
+        }
+    }
+    REQUIRE(std::fabs(travelled) >= 40.0);
+}
+
+TEST_CASE("car_kills_the_chick") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    die_under_a_car(gameboy, 20);
+
+    REQUIRE(popup_shown(gameboy));
+    // the chick may have died right where the popup sits, so it is parked offscreen
+    REQUIRE_FALSE(chick_at(gameboy).found);
+    REQUIRE(car_runs(gameboy).empty());
+    for (char c : std::string("GAMEOVRSCBTPY")) {
+        REQUIRE(bg_has_tile(gameboy, popup_tile(c)));
+    }
+}
+
+TEST_CASE("popup_is_centered_and_solid") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    die_under_a_car(gameboy, 20);
+
+    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
+    for (size_t y = kPopupTopPx; y < kPopupEndPx; ++y) {
+        for (size_t x = 0; x < gb::kLcdWidth; ++x) {
+            const uint16_t id = ids[y * gb::kLcdWidth + x];
+            // the whole band is popup fill or an inverted glyph: no world, no sprite, one colour
+            REQUIRE((id & 0x100u) == 0);
+            REQUIRE(static_cast<uint8_t>(id) >= kInvFontFirstTile);
+            REQUIRE(static_cast<uint8_t>(id) <= kInvFontLastTile);
+        }
+    }
+
+    // the frozen world still shows above and below the band
+    bool above = false;
+    bool below = false;
+    for (size_t y = 0; y < gb::kLcdHeight; ++y) {
+        for (size_t x = 0; x < gb::kLcdWidth; ++x) {
+            const uint16_t id = ids[y * gb::kLcdWidth + x];
+            const uint8_t tile = static_cast<uint8_t>(id);
+            if ((id & 0x100u) != 0 || tile < kGrassTileId || tile > kRoadStripeTileId) {
+                continue;
+            }
+            above = above || y < kPopupTopPx;
+            below = below || y >= kPopupEndPx;
+        }
+    }
+    REQUIRE(above);
+    REQUIRE(below);
+
+    // an even length prompt lands symmetric around the 20 column grid
+    const auto [left, right] = glyph_span(gameboy, kPopupPromptRow, kInvFontFirstTile + 1, kInvFontLastTile);
+    REQUIRE(left >= 0);
+    REQUIRE(left + right == 19);
+}
+
+TEST_CASE("best_score_lands_in_sram") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    die_under_a_car(gameboy, 20);
+
+    const std::span<uint8_t> ram = gameboy.external_ram();
+    REQUIRE(sram_has_magic(ram));
+    REQUIRE(sram_best(ram) >= 1u);
+}
+
+TEST_CASE("best_survives_reload") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy first;
+    start_play(first, rom);
+    die_under_a_car(first, 20);
+    const std::vector<uint8_t> saved(first.external_ram().begin(), first.external_ram().end());
+    const uint16_t best = sram_best(saved);
+    REQUIRE(best >= 1u);
+
+    gb::Gameboy second;
+    REQUIRE(second.load_rom(rom));
+    const std::span<uint8_t> ram = second.external_ram();
+    REQUIRE(ram.size() == saved.size());
+    std::copy(saved.begin(), saved.end(), ram.begin());
+
+    // boot must read the saved best instead of re-initialising it
+    run(second, kBootFrames);
+    REQUIRE(sram_has_magic(second.external_ram()));
+    REQUIRE(sram_best(second.external_ram()) == best);
+    REQUIRE(row_has_nonzero_digit(second, kBestRow));
+}
+
+TEST_CASE("retry_flow") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    die_under_a_car(gameboy, 20);
+    REQUIRE(popup_shown(gameboy));
+
+    // an early press is inside the lockout, so the popup stays put
+    press(gameboy, gb::Button::A, 2);
+    run(gameboy, 2 * kEnterPlayFrames);
+    REQUIRE(popup_shown(gameboy));
+    REQUIRE_FALSE(title_shown(gameboy));
+
+    // b is neither the start nor the hop key, and it still clears the popup
+    dismiss(gameboy, gb::Button::B);
+    REQUIRE_FALSE(popup_shown(gameboy));
+    REQUIRE(row_has_tile(gameboy, kTitleRow, font_tile('C')));
+    REQUIRE(row_has_tile(gameboy, kTitleRow, font_tile('Y')));
+    REQUIRE(row_has_nonzero_digit(gameboy, kBestRow));
+
+    // the press that cleared the popup is spent: the hover screen just keeps hovering
+    for (uint32_t i = 0; i < 60; ++i) {
+        gameboy.run_frame();
+        REQUIRE(title_shown(gameboy));
+        REQUIRE(chick_at(gameboy).found);
+    }
+
+    press(gameboy, gb::Button::A, 2);
+    run(gameboy, 2 * kEnterPlayFrames);
+    REQUIRE_FALSE(title_shown(gameboy));
+    REQUIRE_FALSE(popup_shown(gameboy));
+    REQUIRE(hud_score(gameboy) == 0);
+    const Chick fresh = chick_at(gameboy);
+    REQUIRE(fresh.found);
+    REQUIRE(chick_col(fresh) == 4);
+}
+
+TEST_CASE("autopilot_crosses_roads") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    // a handful of fixed seeds: still deterministic, but not one lucky world
+    for (uint32_t hover_extra : {0u, 1u, 2u, 5u, 11u, 17u, 23u, 31u}) {
+        gb::Gameboy gameboy;
+        start_play(gameboy, rom, hover_extra);
+
+        const int reached = autopilot(gameboy, 13, 60);
+        REQUIRE(reached >= 12);
+        // the whole mixed run happened without a scratch
+        REQUIRE(chick_at(gameboy).found);
+        REQUIRE_FALSE(popup_shown(gameboy));
+        REQUIRE(play_area_is_all_terrain(gameboy));
+    }
 }
 
 TEST_CASE("crossy_play_is_deterministic") {
