@@ -24,30 +24,39 @@ void hud_hide(void) {
     }
 }
 
-void hud_draw(uint16_t score) {
+// the run of digit sprites, pixel centered on center_x whatever its length
+static void draw_digits(uint16_t value, uint8_t center_x, uint8_t oam_y) {
     uint8_t digit[kHudDigits];
     uint8_t shown;
     uint8_t i;
     uint8_t s;
     uint8_t x;
 
-    if (score > kScoreMax) {
-        score = kScoreMax;
+    if (value > kScoreMax) {
+        value = kScoreMax;
     }
-    digit[0] = (uint8_t)(score / 100U);
-    digit[1] = (uint8_t)((score / 10U) % 10U);
-    digit[2] = (uint8_t)(score % 10U);
+    digit[0] = (uint8_t)(value / 100U);
+    digit[1] = (uint8_t)((value / 10U) % 10U);
+    digit[2] = (uint8_t)(value % 10U);
     shown = digit[0] != 0U ? 3U : (digit[1] != 0U ? 2U : 1U);
 
-    x = (uint8_t)(kHudCenterOamX - (uint8_t)(shown * (kDigitWidthPx / 2U)));
+    x = (uint8_t)(center_x - (uint8_t)(shown * kDigitHalfPx));
     for (i = 0; i < kHudDigits; ++i) {
         s = (uint8_t)(kHudFirstSprite + i);
         if (i < shown) {
             set_sprite_tile(s, (uint8_t)(kDigitTileId + digit[kHudDigits - shown + i]));
-            move_sprite(s, (uint8_t)(x + (uint8_t)(i * kDigitWidthPx)), kHudOamY);
+            move_sprite(s, (uint8_t)(x + (uint8_t)(i * kDigitWidthPx)), oam_y);
         } else {
             // oam y 0 parks a sprite entirely above the screen
             move_sprite(s, 0, 0);
         }
     }
+}
+
+void hud_draw(uint16_t score) {
+    draw_digits(score, kHudCenterOamX, kHudOamY);
+}
+
+void hud_draw_best(uint16_t best) {
+    draw_digits(best, kHoverBestCenterOamX, kHoverBestOamY);
 }

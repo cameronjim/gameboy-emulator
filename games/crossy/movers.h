@@ -12,6 +12,9 @@ void movers_lane_init(uint8_t slot, uint8_t water, uint8_t tier, uint8_t chained
 // advances and draws only the danger lanes the camera can see
 void movers_update(void);
 
+// the same, stopping at last; the hover banner covers the lanes above it
+void movers_update_to(uint16_t last);
+
 void movers_hide(void);
 
 // 1 when a car of that road lane overlaps a chick centered on center_x

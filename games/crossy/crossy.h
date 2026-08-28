@@ -10,9 +10,6 @@
 
 // the visible screen is 20x18 cells; text lines are centered across the 20
 #define kScreenCols 20U
-#define kTitleTextY 6U
-#define kPromptTextY 10U
-#define kBestTextY 12U
 
 // the grid: a lane is 16 px (2 tile rows), a column is 16 px (2 tile cols)
 #define kCellPx 16U
@@ -29,6 +26,8 @@
 #define kRailWarnTileId 0xA6U
 // odd world lanes take the second grass tile, so a lane boundary reads even in grayscale
 #define kGrassAltTileId 0xA7U
+// the calm half of a water lane; glints ride the top row only, so one lane reads as one band
+#define kWaterCalmTileId 0xA8U
 
 // a lane is one of four kinds; the kind is cached per ring slot
 #define kLaneGrass 0U
@@ -72,10 +71,6 @@
 // on water the chick takes the lane's top half, clear of the log's scanlines entirely
 #define kChickWaterInset 0U
 #define kChickSpawnCol 4U
-// on the title the chick stands one cell lower, clear of the BEST line
-#define kHoverChickScreenY 116U
-// and on the screen's middle, not on its spawn column, which sits 8 px left of the centered text
-#define kHoverChickScreenX 76U
 // oam coords are offset by 8,16 from the screen
 #define kOamXOffset 8U
 #define kOamYOffset 16U
@@ -117,7 +112,13 @@
 #define kHudOamY 24U       // screen y 8
 #define kHudCenterOamX 88U // screen x 80; the run is centered by half a digit per digit
 #define kDigitWidthPx 8U
+#define kDigitHalfPx 4U
 #define kScoreMax 999U // three digit sprites is all the hud can show
+// the hover banner reuses the hud's three sprites, so any best is pixel centered whatever its length
+// the banner's lanes draw no movers, so those scanlines carry three sprites and nothing else
+#define kHoverBestOamY 56U // screen y 40, the banner's last row
+// the glyph badge is 7 of the cell's 8 px, so the lit run centers one px right of the cells
+#define kHoverBestCenterOamX 89U
 
 // movers: cars and logs ride one wrapping track per lane, y centered in the lane
 #define kMoverLaneInset 4U
@@ -235,6 +236,15 @@
 // game over popup: a band of bg cells over the frozen world, no window layer involved
 #define kPopupTopRow 5U // rows 5..11 of 18 center the four text lines
 #define kPopupRows 7U
+// the hover banner is the same machinery over a live world: rows 1..5, digits on the last
+#define kBannerTopRow 1U
+#define kBannerRows 5U
+#define kBannerTitleRow 1U
+#define kBannerPromptRow 2U
+#define kBannerBestRow 3U
+// hover parks the camera on lane 0, so screen rows 0..5 are lanes 6, 5 and 4
+#define kBannerLaneLo 4U
+#define kBannerLanes 3U
 // scx is always zero here, so the band is exactly the visible columns wide
 #define kPopupCols 20U
 #define kPopupRowsPerFrame 2U // 40 cells is a comfortable vblank budget

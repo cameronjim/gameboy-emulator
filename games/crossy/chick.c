@@ -126,13 +126,6 @@ void chick_init(void) {
     chick_draw();
 }
 
-// the hover chick is placed for the eye, not on the grid: its spawn column is 8 px left of center
-void chick_hover(void) {
-    chick_init();
-    move_sprite(kChickSprite, (uint8_t)(kHoverChickScreenX + kOamXOffset),
-                (uint8_t)(kHoverChickScreenY + kOamYOffset));
-}
-
 void chick_update(uint8_t pressed) {
     if (!hopping()) {
         if (pressed & J_UP) {

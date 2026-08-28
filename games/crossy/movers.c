@@ -151,9 +151,12 @@ void movers_hide(void) {
 }
 
 void movers_update(void) {
+    movers_update_to((uint16_t)(terrain_cam_lane() + kLanesAhead));
+}
+
+void movers_update_to(uint16_t last) {
     uint16_t cam = terrain_cam_lane();
     uint16_t lane = (cam > kMaxLanesBehind) ? (uint16_t)(cam - kMaxLanesBehind) : 0U;
-    uint16_t last = (uint16_t)(cam + kLanesAhead);
     uint8_t sprite = kMoverFirstSprite;
     uint8_t pool_end = (uint8_t)(kMoverFirstSprite + kMoverSprites);
     uint8_t water;
