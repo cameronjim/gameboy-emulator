@@ -27,6 +27,8 @@
 #define kWaterTileId 0xA4U
 #define kRailTileId 0xA5U
 #define kRailWarnTileId 0xA6U
+// odd world lanes take the second grass tile, so a lane boundary reads even in grayscale
+#define kGrassAltTileId 0xA7U
 
 // a lane is one of four kinds; the kind is cached per ring slot
 #define kLaneGrass 0U
@@ -72,6 +74,8 @@
 #define kChickSpawnCol 4U
 // on the title the chick stands one cell lower, clear of the BEST line
 #define kHoverChickScreenY 116U
+// and on the screen's middle, not on its spawn column, which sits 8 px left of the centered text
+#define kHoverChickScreenX 76U
 // oam coords are offset by 8,16 from the screen
 #define kOamXOffset 8U
 #define kOamYOffset 16U
@@ -115,19 +119,29 @@
 #define kDigitWidthPx 8U
 #define kScoreMax 999U // three digit sprites is all the hud can show
 
-// movers: cars and logs ride one 256 px wrapping track per lane, y centered in the lane
+// movers: cars and logs ride one wrapping track per lane, y centered in the lane
 #define kMoverLaneInset 4U
 // two movers share a lane's speed half a lap apart, so their gap never closes
 #define kMoversPerLane 2U
-#define kMoverPhase 0x8000U
+// a car's lap is the whole 256 px an 8.8 position wraps through for free
+#define kCarTrackPx 256U
+#define kCarPhase 0x8000U
+// water's lap is shorter, so the worst wait for a log at one column drops by a third
+#define kWaterTrackPx 192U
+#define kWaterTrackFixed 0xC000U
+#define kWaterPhase 0x6000U
+// 0x10000 minus the lap: what a step below zero overshoots by when the 16 bit position wraps instead
+#define kWaterWrapSlack 0x4000U
 // the track doubles as oam x, so a mover slides off either edge before it wraps
 #define kMoverDrawLimit 176U
 // worst case in nine visible lanes is five water lanes: water chunks cap at 2, grass at 2
 #define kMoverFirstSprite 4U
 #define kMoverSprites 30U
-// 34 of 40 oam, and a water lane's 6 log parts plus 3 hud digits plus the chick is the dmg's 10
+// 5 water lanes x 6 log parts is the pool exactly, as is 4 water lanes plus one 6 part train
+// 36 of 40 oam with the eagle, and a water lane's 6 log parts plus 3 hud digits plus the chick is 10
 // so the hud stays at screen y 8, where only the top lane's movers ever share its scanlines
-// a track lane borrows 4 of the same slots, so its worst scanline is 4 train + 2 eagle + 3 hud
+// the chick never reaches those scanlines, so play's worst line is 6 train + 3 hud
+// the swoop hides the digits, leaving 6 train + 2 eagle + 1 chick: still inside the dmg's 10
 
 // cars: 16 px of two 8x8 sprites in tile id order
 #define kCarTileId 0xC0U
@@ -187,11 +201,12 @@
 // the second ding lands halfway through the warning
 #define kTrackBellGap 30U
 
-// the train: four 8x8 sprites in tile id order, one solid 32 px block
+// the train: six 8x8 sprites of one solid 48 px block, drawn from four tiles
 #define kTrainTileId 0xC8U
-#define kTrainSprites 4U
-#define kTrainPx 32
-// 5 px a frame from just off the right edge clears the whole screen in 39 frames
+#define kTrainTileCount 4U
+#define kTrainSprites 6U
+#define kTrainPx 48
+// 5 px a frame from just off the right edge walks the whole block past the left one in 42 frames
 #define kTrainSpeedPx 5
 #define kTrainStartX 160
 // a position the sweep never takes, so one value means "no train on this lane"
