@@ -3,7 +3,8 @@
 
 #include <stdint.h>
 
-void world_init(void);
+void world_init(uint8_t seed);
+void world_snap_scroll(void);
 void world_scroll(void);
 uint8_t world_kills(uint8_t bird_top_px);
 // pipes cleared this round; world counts, the hud displays

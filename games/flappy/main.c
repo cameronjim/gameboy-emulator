@@ -91,7 +91,7 @@ static void draw_title(void) {
     SCY_REG = 0;
     cls();
     print_centered(kTitleTextY, "FLAPPY");
-    print_centered(kPromptTextY, "FLAP TO START");
+    print_centered(kPromptTextY, "SPACE TO START");
     format_value("BEST", save_best());
     print_centered(kBestTextY, line);
     set_bkg_data(kGroundTileId, 1, kGroundTile);
@@ -107,10 +107,10 @@ static void enter_title(void) {
     DISPLAY_ON;
 }
 
-static void enter_play(void) {
+static void enter_play(uint8_t seed) {
     DISPLAY_OFF;
     cls();
-    world_init();
+    world_init(seed);
     bird_init();
     hud_init();
     SHOW_SPRITES;
@@ -142,7 +142,7 @@ static void build_popup(uint16_t score) {
     popup_line(kPopupScoreRow, line);
     format_value("BEST", save_best());
     popup_line(kPopupBestRow, line);
-    popup_line(kPopupPromptRow, "PRESS ANY KEY");
+    popup_line(kPopupPromptRow, "SPACE TO RETRY");
     // the world is frozen, so this column stays under screen column 0 until the popup goes
     popup_col = (uint8_t)((SCX_REG >> 3) & (kMapCols - 1U));
     popup_step = 0;
@@ -175,6 +175,7 @@ void main(void) {
     uint8_t prev = 0;
     uint8_t pressed = 0;
     uint8_t over_frames = 0;
+    uint8_t hover_frames = 0;
     uint8_t dead = 0;
     uint16_t shown = 0;
     uint16_t score = 0;
@@ -211,9 +212,10 @@ void main(void) {
 
         if (state == kStateTitle) {
             bird_hover();
+            ++hover_frames;
             // the dismissing press is spent, so only a fresh press starts the next run
             if (pressed & (J_START | J_A)) {
-                enter_play();
+                enter_play(hover_frames);
                 // the press that starts the run is also its first flap
                 bird_flap();
                 bird_draw();
@@ -243,6 +245,7 @@ void main(void) {
             sfx_hit();
             bird_hide();
             save_record(score);
+            world_snap_scroll();
             build_popup(score);
             over_frames = 0;
             state = kStateOver;

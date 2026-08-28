@@ -101,11 +101,12 @@ static void stream_column(void) {
     ++next_col;
 }
 
-void world_init(void) {
+void world_init(uint8_t seed) {
     uint8_t i;
 
-    // div free-runs at 16384 hz, so a human's press time picks the round
-    rng_state = DIV_REG;
+    // seeded from the hover frame count, so a human's press time picks the
+    // round but a scripted run is stable across rom changes
+    rng_state = seed;
     world_x = 0;
     next_col = 0;
     phase = 0;
@@ -123,6 +124,12 @@ void world_init(void) {
     for (i = 0; i < kMapCols; ++i) {
         stream_column();
     }
+}
+
+// tile-align the frozen scene so popup text lands exactly on its grid centers
+void world_snap_scroll(void) {
+    world_x &= ~(uint32_t)((1UL << (kFixedShift + 3)) - 1U);
+    SCX_REG = (uint8_t)(world_x >> kFixedShift);
 }
 
 void world_scroll(void) {
