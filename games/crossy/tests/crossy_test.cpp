@@ -51,6 +51,8 @@ constexpr uint8_t kCarFrontTileId = 0xC0;
 constexpr uint8_t kCarRearTileId = 0xC1;
 constexpr uint8_t kLogTileId = 0xC4;
 constexpr uint8_t kDigitTileId = 0xD0;
+constexpr uint8_t kEagleFirstTileId = 0xCC;
+constexpr uint8_t kEagleLastTileId = 0xCD;
 
 // the popup draws from an inverted copy of the font parked at 0x60
 constexpr uint8_t kInvFontFirstTile = 0x60;
@@ -153,6 +155,32 @@ Chick chick_at(const gb::Gameboy& gameboy) {
         c.found = true;
     }
     return c;
+}
+
+// top-left corner of the eagle's lit sprite pixels, wherever the pair has reached
+Chick eagle_at(const gb::Gameboy& gameboy) {
+    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
+    const std::span<const uint8_t> fb = gameboy.framebuffer();
+    Chick e{0, 0, false, false};
+    for (size_t i = 0; i < ids.size(); ++i) {
+        const uint8_t tile = static_cast<uint8_t>(ids[i]);
+        if ((ids[i] & 0x100u) == 0 || fb[i] == 0) {
+            continue;
+        }
+        if (tile < kEagleFirstTileId || tile > kEagleLastTileId) {
+            continue;
+        }
+        const int x = static_cast<int>(i % gb::kLcdWidth);
+        const int y = static_cast<int>(i / gb::kLcdWidth);
+        if (!e.found || x < e.x) {
+            e.x = x;
+        }
+        if (!e.found || y < e.y) {
+            e.y = y;
+        }
+        e.found = true;
+    }
+    return e;
 }
 
 int chick_col(const Chick& c) {
@@ -932,6 +960,35 @@ void die_under_a_car(gb::Gameboy& gameboy, int steps) {
     FAIL("no car ever reached the chick");
 }
 
+// the base tier tops a car out at a whole pixel a frame; the ramp is what beats it
+constexpr double kBaseCarMax = 1.0;
+constexpr double kSpeedTol = 0.05;
+
+// the quickest car of any visible road lane, in px per frame; -1 when the camera moved mid sample
+double fastest_car(gb::Gameboy& gameboy) {
+    std::vector<double> before;
+    for (int band = 0; band < kBands; ++band) {
+        before.push_back(lane_phase(gameboy, band));
+    }
+    const Chick from = chick_at(gameboy);
+    run(gameboy, kMeasureFrames);
+    const Chick to = chick_at(gameboy);
+    // a creep mid sample slides every lane down a band, so the pairing would be nonsense
+    if (!from.found || !to.found || from.y != to.y) {
+        return -1.0;
+    }
+    double best = 0;
+    for (int band = 0; band < kBands; ++band) {
+        const double now = lane_phase(gameboy, band);
+        const double was = before[static_cast<size_t>(band)];
+        if (was == kNoPhase || now == kNoPhase) {
+            continue;
+        }
+        best = std::max(best, std::fabs(snap_speed(phase_delta(now, was) / kMeasureFrames)));
+    }
+    return best;
+}
+
 std::vector<int> play_grid(const gb::Gameboy& gameboy) {
     std::vector<int> grid;
     for (int cy = 0; cy < 18; ++cy) {
@@ -1570,6 +1627,177 @@ TEST_CASE("autopilot_crosses_rivers") {
         REQUIRE(chick_at(gameboy).found);
         REQUIRE_FALSE(popup_shown(gameboy));
         REQUIRE(play_area_is_all_terrain(gameboy));
+    }
+}
+
+// the eagle's timer is 600 frames; these bracket the swoop that follows it
+constexpr uint32_t kIdleSafeFrames = 560;
+constexpr uint32_t kEagleWatchFrames = 140;
+constexpr uint32_t kSwoopFrames = 140;
+
+TEST_CASE("idling_summons_the_eagle") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+
+    // nine seconds of standing still on the opening grass and the sky is still empty
+    run(gameboy, kIdleSafeFrames);
+    REQUIRE_FALSE(eagle_at(gameboy).found);
+    REQUIRE(chick_at(gameboy).found);
+    REQUIRE_FALSE(popup_shown(gameboy));
+
+    Chick eagle{0, 0, false, false};
+    for (uint32_t frame = 0; frame < kEagleWatchFrames && !eagle.found; ++frame) {
+        gameboy.run_frame();
+        eagle = eagle_at(gameboy);
+    }
+    REQUIRE(eagle.found);
+    // it comes down the chick's own column, four px a frame
+    const Chick chick = chick_at(gameboy);
+    REQUIRE(chick.found);
+    REQUIRE(std::abs(chick_at(gameboy).x - eagle.x) <= kCellPx);
+
+    run(gameboy, 4);
+    const Chick lower = eagle_at(gameboy);
+    REQUIRE(lower.found);
+    REQUIRE(lower.y > eagle.y);
+    REQUIRE(lower.x == eagle.x);
+
+    bool killed = false;
+    for (uint32_t frame = 0; frame < kSwoopFrames && !killed; ++frame) {
+        gameboy.run_frame();
+        killed = popup_shown(gameboy);
+    }
+    REQUIRE(killed);
+    run(gameboy, 6);
+    REQUIRE_FALSE(chick_at(gameboy).found);
+    REQUIRE_FALSE(eagle_at(gameboy).found);
+}
+
+TEST_CASE("eagle_resets_on_progress") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+
+    // four long idles, every one broken by a new lane: unreset, the timer would fire in the third
+    for (int round = 0; round < 4; ++round) {
+        // idle somewhere a plain hop leads on, so the round is a wait and not a river crossing
+        for (int step = 0; step < 12; ++step) {
+            const Chick c = chick_at(gameboy);
+            REQUIRE(c.found);
+            if (cell_tile(gameboy, c, 1, chick_cell(c)) == kGrassTileId) {
+                break;
+            }
+            autopilot_step(gameboy);
+        }
+
+        const int before = hud_score(gameboy);
+        run(gameboy, 200);
+        REQUIRE_FALSE(eagle_at(gameboy).found);
+        REQUIRE_FALSE(popup_shown(gameboy));
+
+        tap(gameboy, gb::Button::Up);
+        REQUIRE(hud_score(gameboy) == before + 1);
+    }
+
+    // well past a thousand frames of play and the eagle never had a reason to come
+    REQUIRE_FALSE(eagle_at(gameboy).found);
+    REQUIRE(chick_at(gameboy).found);
+    REQUIRE_FALSE(popup_shown(gameboy));
+}
+
+TEST_CASE("camera_creeps") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    const Chick before = chick_at(gameboy);
+    REQUIRE(before.found);
+    const std::vector<int> grid_before = play_grid(gameboy);
+
+    // four seconds of standing still and the camera has taken a lane on its own
+    run(gameboy, 250);
+    const Chick after = chick_at(gameboy);
+    REQUIRE(after.found);
+    REQUIRE(after.x == before.x);
+    REQUIRE(after.y == before.y + kCellPx);
+
+    // the same world, two tile rows further down the screen
+    const std::vector<int> grid_after = play_grid(gameboy);
+    size_t compared = 0;
+    for (int cy = 2; cy < 18; ++cy) {
+        for (int cx = 0; cx < 20; ++cx) {
+            const int was = grid_before[static_cast<size_t>((cy - 2) * 20 + cx)];
+            const int now = grid_after[static_cast<size_t>(cy * 20 + cx)];
+            if (was == kNoTile || now == kNoTile) {
+                continue;
+            }
+            REQUIRE(now == was);
+            ++compared;
+        }
+    }
+    REQUIRE(compared > 300u);
+}
+
+TEST_CASE("falling_behind_kills") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    gb::Gameboy gameboy;
+    start_play(gameboy, rom);
+    const Chick home = chick_at(gameboy);
+    REQUIRE(home.found);
+
+    // two creeps of drift, then one lane of progress: enough to restart the idle timer, not
+    // enough to catch the camera up, so the next creeps push the chick off the bottom first
+    run(gameboy, 500);
+    REQUIRE_FALSE(eagle_at(gameboy).found);
+    const Chick drifted = chick_at(gameboy);
+    REQUIRE(drifted.found);
+    REQUIRE(drifted.y == home.y + 2 * kCellPx);
+
+    tap(gameboy, gb::Button::Up);
+    REQUIRE(hud_score(gameboy) == 1);
+
+    bool swooped = false;
+    bool killed = false;
+    for (uint32_t frame = 0; frame < 700 && !killed; ++frame) {
+        gameboy.run_frame();
+        swooped = swooped || eagle_at(gameboy).found;
+        killed = popup_shown(gameboy);
+    }
+    // the eagle took it, and well before the idle timer could have run out
+    REQUIRE(swooped);
+    REQUIRE(killed);
+    run(gameboy, 6);
+    REQUIRE_FALSE(chick_at(gameboy).found);
+}
+
+TEST_CASE("difficulty_ramps_car_speed") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    // fixed seeds whose deep road lanes roll fast; the opening ones cannot, whatever they roll
+    for (uint32_t hover_extra : {6u, 7u, 8u}) {
+        gb::Gameboy gameboy;
+        start_play(gameboy, rom, hover_extra);
+
+        // lanes 0..6 are all the world holds yet, and every one of them is base tier
+        const double base = fastest_car(gameboy);
+        REQUIRE(base <= kBaseCarMax + kSpeedTol);
+
+        double deep = 0;
+        for (int step = 0; step < 60 && hud_score(gameboy) < 20; ++step) {
+            if (!autopilot_step(gameboy)) {
+                break;
+            }
+            // past lane 14 every visible lane was generated at 12 or beyond
+            if (hud_score(gameboy) >= 14) {
+                deep = std::max(deep, fastest_car(gameboy));
+            }
+        }
+        REQUIRE(hud_score(gameboy) >= 14);
+        REQUIRE(deep > kBaseCarMax + kSpeedTol);
     }
 }
 
