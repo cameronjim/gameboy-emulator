@@ -19,9 +19,16 @@ distance. gbdk-2020 c, mbc1+ram+battery, title `CROSSY`, best score in sram.
 - every sprite is 8x16 (SPRITES_8x16), so tile art comes in consecutive
   even-aligned pairs and a sprite parked at a lane's top edge covers exactly
   that lane. sprite counts are unchanged by that: car = 2 sprites (16x16),
-  log = 3 (24x16), train = a sweeping 6-sprite block (48x16), eagle = 2
-  (16x16). per-lane caps: 2 cars or 2 logs, so one scanline sees at most 6
-  movers + 3 hud digits, or 6 + 2 eagle + player. oam worst case 36 of 40.
+  log = 3 (24x16), eagle = 2 (16x16). per-lane caps: 2 cars or 2 logs, so one
+  scanline sees at most 6 movers + 3 hud digits, or 6 + 2 eagle + player. oam
+  worst case 36 of 40.
+- the train is 256 px, longer than the screen, and a train of sprites is
+  impossible at ten a scanline: only its ends are oam, a 4-sprite head (32 px)
+  and a 2-sprite tail (16 px), 6 pool slots, exactly what a water lane's two
+  logs take. the 208 px between them are bg tiles the head writes and the tail
+  lifts, two per 8 px column, all in vblank. worst pool window is 4 water lanes
+  (24) plus one track (6) = 30, the pool exactly; worst scanline is head 4 plus
+  3 hud digits = 7 of 10.
 - player is one 8x16 sprite centered across its 16 px cell.
 - a rider snaps onto its log's own 8 px sprite grid, so their oam x are equal
   and dmg's index tie-break draws the chick (sprite 0) over the log.
@@ -29,12 +36,17 @@ distance. gbdk-2020 c, mbc1+ram+battery, title `CROSSY`, best score in sram.
 ## test/tile-id contract (the emulator is the harness, as in milestone 15)
 
 - bg terrain: grass 0xA0, tree 0xA1, road 0xA2, road stripe 0xA3, water 0xA4,
-  rail 0xA5, rail warning 0xA6, alt grass 0xA7, deep water 0xA8. grass and
-  water each take one tile per lane by lane parity, so a lane is one flat band
-  and a boundary reads as a shade step. popup inverted font at 0x60-0x9F.
-- sprites, all 8x16 pairs: car 0xB0-0xB3, log 0xB4-0xB9, eagle 0xBC-0xBF,
-  train 0xC0-0xC7, hud digits 0xC8-0xDB (badge in each pair's top tile),
-  player 0xE0-0xE3 (idle pair then hop pair).
+  rail 0xA5, rail warning 0xA6, alt grass 0xA7, deep water 0xA8, train body
+  upper 0xA9 and lower 0xAA. grass and water each take one tile per lane by
+  lane parity, so a lane is one flat band and a boundary reads as a shade step.
+  the two train body tiles are the carriage the sprite head and tail wear, laid
+  over a track lane's two rows column by column while a sweep crosses it.
+  popup inverted font at 0x60-0x9F.
+- sprites, all 8x16 pairs: car 0xB0-0xB3 (low slung body, wheels tucked under
+  the fender), log 0xB4-0xB9, eagle 0xBC-0xBF, train 0xC0-0xC7 in nose, cab,
+  carriage, rear order, hud digits 0xC8-0xDB (badge in each pair's top tile),
+  player 0xE0-0xE3 (idle pair then hop pair, a yellow chick with an orange
+  beak, feet and wing under a near black outline).
 - rng seeds from the hover frame counter (flappy lesson: scripted tests stay
   valid across rom changes). all text lines even length, print_centered.
 - tests read framebuffer_tiles(); directional assertions only.

@@ -59,8 +59,23 @@ out-of-scope items noticed during milestones, per claude.md rule 8.
 - crossy: the two log ends are the same rounded cap, so a 24 px log reads the
   same either way round. a cut end grain ring would need a third tile pair.
 - crossy: 8x16 sprites cost twice the tile budget, so the sprite bank now runs
-  0xb0-0xe3. only 0xba-0xbb, 0xdc-0xdf and 0xe4+ are left for new art.
+  0xb0-0xe3. only 0xba-0xbb, 0xdc-0xdf and 0xe4+ are left for new art, and the
+  bg bank now runs 0xa0-0xaa with the two train carriage tiles.
+- crossy: a track lane leaving the visible window mid sweep drops the sweep and
+  redraws its whole lane in one vblank, which is 40 tiles beside the lane the
+  same frame streams. it only ever happens on the frame a sweeping track falls
+  out of the window; a per-column undo would spread the cost but needs the ring
+  to remember which columns it had painted.
+- crossy: the head lays a carriage down the moment its right edge clears a
+  column, so the join is exact to 8 px rather than to the pixel. at 5 px a frame
+  the seam is invisible, but a faster train would show a 1-7 px notch.
+- crossy: the train's carriages are bg, so nothing can be drawn between them and
+  the terrain. a chick standing on the rails still draws over them as a sprite,
+  which is why standing there is lethal rather than hidden.
 - crossy: aligning run_frame to the vblank edge shifted the free running frame
   counter the seed is sampled from, so every pinned enter_world wait landed in a
   different world and the whole seed table had to be re-searched. any future
   change to what a frame costs will move them again.
+- emulator harness: run_frame now ends on the ppu vblank edge (fix landed
+  upstream), so the crossy tests' two-scanline mover reads are belt and
+  braces rather than a workaround; they can be simplified some day.

@@ -56,6 +56,9 @@ constexpr uint8_t kRailTileId = 0xA5;
 constexpr uint8_t kRailWarnTileId = 0xA6;
 constexpr uint8_t kGrassAltTileId = 0xA7;
 constexpr uint8_t kWaterDarkTileId = 0xA8;
+// the train's carriages are bg, not sprites: dmg draws ten sprites a line and the block is 256 px
+constexpr uint8_t kTrainBodyUpperTileId = 0xA9;
+constexpr uint8_t kTrainBodyLowerTileId = 0xAA;
 // every sprite is 8x16, so each family owns an even aligned run of tile pairs
 constexpr uint8_t kCarFirstTileId = 0xB0;
 constexpr uint8_t kCarLastTileId = 0xB3;
@@ -101,6 +104,15 @@ bool is_water_tile(int tile) {
 
 bool is_track_tile(int tile) {
     return tile == kRailTileId || tile == kRailWarnTileId;
+}
+
+bool is_train_body_tile(int tile) {
+    return tile == kTrainBodyUpperTileId || tile == kTrainBodyLowerTileId;
+}
+
+// a sweep buries its own rails under carriages, so a planner reads either as the same lane
+bool is_track_lane_tile(int tile) {
+    return is_track_tile(tile) || is_train_body_tile(tile);
 }
 
 // map column of the warning light, the one cell of a track lane whose art blinks
@@ -260,7 +272,7 @@ bool cell_landable(const gb::Gameboy& gameboy, const Chick& c, int k, int gcol) 
 // water needs a log and rails need a timed window, so the dry land planner routes around both
 bool cell_impassable(const gb::Gameboy& gameboy, const Chick& c, int k, int gcol) {
     const int tile = cell_tile(gameboy, c, k, gcol);
-    return tile == kTreeTileId || is_water_tile(tile) || is_track_tile(tile);
+    return tile == kTreeTileId || is_water_tile(tile) || is_track_lane_tile(tile);
 }
 
 // one 8x8 cell of one of a lane's two tile rows, k lanes ahead of the chick
@@ -471,6 +483,12 @@ struct CarRun {
 constexpr int kBands = 9;
 constexpr int kBandPx = 16;
 
+// run_frame spends a frame of cycles, not a whole lcd frame, so the buffer can straddle two of
+// them and a moving mover reads at two x down one band. every family is full width across these
+// two rows, and a tear almost never falls between two adjacent scanlines
+constexpr int kProbeRow = 6;
+constexpr int kProbeRows = 2;
+
 // columns of one sprite family lit in a band; bridge spans the hole a rider punches in a log
 std::vector<CarRun> runs_of(const gb::Gameboy& gameboy, uint8_t lo, uint8_t hi, int bridge) {
     const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
@@ -481,7 +499,8 @@ std::vector<CarRun> runs_of(const gb::Gameboy& gameboy, uint8_t lo, uint8_t hi, 
         int shut = -1;
         for (int x = 0; x <= static_cast<int>(gb::kLcdWidth) + bridge; ++x) {
             bool lit = false;
-            for (int y = band * kBandPx; y < band * kBandPx + kBandPx && !lit; ++y) {
+            for (int y = band * kBandPx + kProbeRow; y < band * kBandPx + kProbeRow + kProbeRows && !lit;
+                 ++y) {
                 if (x >= static_cast<int>(gb::kLcdWidth)) {
                     break;
                 }
@@ -554,10 +573,13 @@ std::vector<CarRun> train_runs(const gb::Gameboy& gameboy) {
     return runs_of(gameboy, kTrainFirstTileId, kTrainLastTileId, kRiderBridge);
 }
 
-// the sweep is one solid block of six sprites
-constexpr int kTrainPx = 48;
+// only the block's ends are sprites: 32 px of locomotive at the front, 16 px of rear behind
+constexpr int kTrainHeadPx = 32;
+constexpr int kTrainTailPx = 16;
+// head to rear, longer than the 160 px screen by half again
+constexpr int kTrainSpanPx = 256;
 
-// columns of a band carrying a train pixel; a solid block lights every column it covers
+// columns of a band carrying a train sprite pixel; a solid block lights every column it covers
 int train_columns(const gb::Gameboy& gameboy, int band) {
     const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
     const std::span<const uint8_t> fb = gameboy.framebuffer();
@@ -575,9 +597,103 @@ int train_columns(const gb::Gameboy& gameboy, int band) {
     return n;
 }
 
+// the whole train: its two sprite ends plus the carriages terrain lays down as bg between them
+std::vector<bool> train_cover(const gb::Gameboy& gameboy, int band) {
+    const std::span<const uint16_t> ids = gameboy.framebuffer_tiles();
+    const std::span<const uint8_t> fb = gameboy.framebuffer();
+    std::vector<bool> cover(gb::kLcdWidth, false);
+    for (int x = 0; x < static_cast<int>(gb::kLcdWidth); ++x) {
+        for (int y = band * kBandPx + kProbeRow;
+             y < band * kBandPx + kProbeRow + kProbeRows && !cover[static_cast<size_t>(x)]; ++y) {
+            const size_t i = static_cast<size_t>(y) * gb::kLcdWidth + static_cast<size_t>(x);
+            const uint8_t tile = static_cast<uint8_t>(ids[i]);
+            if ((ids[i] & 0x100u) != 0) {
+                cover[static_cast<size_t>(x)] =
+                    fb[i] != 0 && tile >= kTrainFirstTileId && tile <= kTrainLastTileId;
+            } else {
+                cover[static_cast<size_t>(x)] = is_train_body_tile(tile);
+            }
+        }
+    }
+    return cover;
+}
+
+// leftmost and rightmost covered column of the band, or {-1,-1} when the train is nowhere near
+std::pair<int, int> train_span(const gb::Gameboy& gameboy, int band) {
+    const std::vector<bool> cover = train_cover(gameboy, band);
+    int x0 = -1;
+    int x1 = -1;
+    for (int x = 0; x < static_cast<int>(gb::kLcdWidth); ++x) {
+        if (!cover[static_cast<size_t>(x)]) {
+            continue;
+        }
+        if (x0 < 0) {
+            x0 = x;
+        }
+        x1 = x;
+    }
+    return {x0, x1};
+}
+
 bool train_in_band(const gb::Gameboy& gameboy, int band) {
-    for (const CarRun& run : train_runs(gameboy)) {
-        if (run.band == band) {
+    return train_span(gameboy, band).first >= 0;
+}
+
+// a camera creep slides the lanes off the 16 px band grid for eight frames, and tracks come singly:
+// so a sweep watched over a long crossing is followed across the whole screen, not one named band
+std::vector<bool> train_cover_on_screen(const gb::Gameboy& gameboy) {
+    std::vector<bool> cover(gb::kLcdWidth, false);
+    for (int band = 0; band < kBands; ++band) {
+        const std::vector<bool> in_band = train_cover(gameboy, band);
+        for (size_t x = 0; x < cover.size(); ++x) {
+            cover[x] = cover[x] || in_band[x];
+        }
+    }
+    return cover;
+}
+
+// span within one 16 px lane band, so a second visible track cannot bleed in
+std::pair<int, int> train_span_in_band(const gb::Gameboy& gameboy, int band) {
+    const std::vector<bool> cover = train_cover(gameboy, band);
+    int x0 = -1;
+    int x1 = -1;
+    for (int x = 0; x < static_cast<int>(gb::kLcdWidth); ++x) {
+        if (!cover[static_cast<size_t>(x)]) {
+            continue;
+        }
+        if (x0 < 0) {
+            x0 = x;
+        }
+        x1 = x;
+    }
+    return {x0, x1};
+}
+
+std::pair<int, int> train_span_on_screen(const gb::Gameboy& gameboy) {
+    const std::vector<bool> cover = train_cover_on_screen(gameboy);
+    int x0 = -1;
+    int x1 = -1;
+    for (int x = 0; x < static_cast<int>(gb::kLcdWidth); ++x) {
+        if (!cover[static_cast<size_t>(x)]) {
+            continue;
+        }
+        if (x0 < 0) {
+            x0 = x;
+        }
+        x1 = x;
+    }
+    return {x0, x1};
+}
+
+// run_frame spends a frame of cycles, not a whole lcd frame, so the buffer can straddle two of
+// them: a band split that way reads one mover at two x, wider than its own art, and is no sample
+bool run_is_torn(const CarRun& run, int width) {
+    return run.x1 - run.x0 + 1 > width;
+}
+
+bool band_is_torn(const gb::Gameboy& gameboy, uint8_t lo, uint8_t hi, int bridge, int band, int width) {
+    for (const CarRun& run : runs_of(gameboy, lo, hi, bridge)) {
+        if (run.band == band && run_is_torn(run, width)) {
             return true;
         }
     }
@@ -619,7 +735,12 @@ double phase_delta(double a, double b, double period) {
 
 constexpr double kNoPhase = -1000.0;
 
+constexpr int kCarPx = 16;
+
 double lane_phase(const gb::Gameboy& gameboy, int band) {
+    if (band_is_torn(gameboy, kCarFirstTileId, kCarLastTileId, 0, band, kCarPx)) {
+        return kNoPhase;
+    }
     for (const CarRun& run : car_runs(gameboy)) {
         if (run.band == band) {
             return std::fmod(car_center(run), kCarPeriod);
@@ -630,6 +751,9 @@ double lane_phase(const gb::Gameboy& gameboy, int band) {
 
 // either log of a lane gives the same phase, so the first one sighted is enough
 double log_phase(const gb::Gameboy& gameboy, int band) {
+    if (band_is_torn(gameboy, kLogFirstTileId, kLogLastTileId, kRiderBridge, band, kLogPx)) {
+        return kNoPhase;
+    }
     for (const CarRun& run : log_runs(gameboy)) {
         if (run.band == band) {
             return std::fmod(log_center(run), kLogPeriod);
@@ -982,7 +1106,7 @@ bool autopilot_step(gb::Gameboy& gameboy) {
         return false;
     }
     const int gcol = chick_cell(c);
-    if (is_track_tile(cell_tile(gameboy, c, 0, gcol))) {
+    if (is_track_lane_tile(cell_tile(gameboy, c, 0, gcol))) {
         // standing on rails is never safe, so the exit hop outranks anything the planner wants
         if (cell_landable(gameboy, c, 1, gcol)) {
             tap(gameboy, gb::Button::Up);
@@ -995,7 +1119,7 @@ bool autopilot_step(gb::Gameboy& gameboy) {
         tap(gameboy, button_for(move));
         return true;
     }
-    if (is_track_tile(cell_tile(gameboy, c, 1, gcol))) {
+    if (is_track_lane_tile(cell_tile(gameboy, c, 1, gcol))) {
         return track_cross(gameboy);
     }
     if (is_water_tile(cell_tile(gameboy, c, 0, gcol)) || is_water_tile(cell_tile(gameboy, c, 1, gcol))) {
@@ -1074,7 +1198,7 @@ bool walk_to_track(gb::Gameboy& gameboy, int steps) {
         if (!c.found) {
             return false;
         }
-        if (is_track_tile(cell_tile(gameboy, c, 1, chick_cell(c)))) {
+        if (is_track_lane_tile(cell_tile(gameboy, c, 1, chick_cell(c)))) {
             return true;
         }
         if (!autopilot_step(gameboy)) {
@@ -1145,13 +1269,44 @@ bool wait_for_train(gb::Gameboy& gameboy, int k, uint32_t budget) {
     return false;
 }
 
+// the chick wears its hop frame through every slide, a camera creep's included, and bands only
+// line up with lanes between them
+bool world_is_settled(const gb::Gameboy& gameboy) {
+    const Chick c = chick_at(gameboy);
+    return c.found && !c.hopping;
+}
+
+// a carriage only ever covers a track lane, so a band carrying one carries nothing else but rails
+bool carriages_only_on_rails(const gb::Gameboy& gameboy) {
+    if (!world_is_settled(gameboy)) {
+        return true;
+    }
+    for (int band = 0; band < kBands; ++band) {
+        bool carriage = false;
+        for (int cx = 0; cx < 20 && !carriage; ++cx) {
+            carriage = is_train_body_tile(bg_cell(gameboy, cx, band * 2)) ||
+                       is_train_body_tile(bg_cell(gameboy, cx, band * 2 + 1));
+        }
+        if (!carriage) {
+            continue;
+        }
+        for (int cx = 0; cx < 20; ++cx) {
+            const int tile = bg_cell(gameboy, cx, band * 2);
+            if (tile != kNoTile && !is_train_body_tile(tile) && !is_track_tile(tile)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 // every cell of the play area, minus the ones a sprite fully covers
 bool play_area_is_all_terrain(const gb::Gameboy& gameboy) {
     for (int cy = 0; cy < 18; ++cy) {
         for (int cx = 0; cx < 20; ++cx) {
             const int tile = bg_cell(gameboy, cx, cy);
             if (tile != kNoTile && !is_grass_tile(tile) && tile != kTreeTileId && !is_road_tile(tile) &&
-                !is_water_tile(tile) && !is_track_tile(tile)) {
+                !is_water_tile(tile) && !is_track_tile(tile) && !is_train_body_tile(tile)) {
                 return false;
             }
         }
@@ -1771,13 +1926,19 @@ TEST_CASE("cars_move_and_keep_their_gap") {
     REQUIRE(phase != kNoPhase);
     double travelled = 0;
     int sign = 0;
+    uint32_t stale = 1;
+    uint32_t sampled = 0;
     for (uint32_t frame = 0; frame < 120; ++frame) {
         gameboy.run_frame();
         const double now = lane_phase(gameboy, band);
-        REQUIRE(now != kNoPhase);
+        // a torn band is no sample; the next clean one is allowed the frames it stands for
+        if (now == kNoPhase) {
+            ++stale;
+            continue;
+        }
         const double step = phase_delta(now, phase, kCarPeriod);
         // 8.8 fixed point at under a pixel a frame, so a step is never a jump
-        REQUIRE(std::fabs(step) <= 1.0);
+        REQUIRE(std::fabs(step) <= 1.0 * stale);
         if (step != 0) {
             if (sign == 0) {
                 sign = step > 0 ? 1 : -1;
@@ -1786,6 +1947,8 @@ TEST_CASE("cars_move_and_keep_their_gap") {
         }
         travelled += step;
         phase = now;
+        stale = 1;
+        ++sampled;
 
         // the two cars share the lane's speed, so their gap can never close
         std::vector<double> centers;
@@ -1800,6 +1963,7 @@ TEST_CASE("cars_move_and_keep_their_gap") {
             }
         }
     }
+    REQUIRE(sampled > 100u);
     REQUIRE(std::fabs(travelled) >= 40.0);
 }
 
@@ -2158,13 +2322,18 @@ TEST_CASE("logs_move_and_keep_their_gap") {
     REQUIRE(phase != kNoPhase);
     double travelled = 0;
     int sign = 0;
+    uint32_t stale = 1;
+    uint32_t sampled = 0;
     for (uint32_t frame = 0; frame < 120; ++frame) {
         gameboy.run_frame();
         const double now = log_phase(gameboy, band);
-        REQUIRE(now != kNoPhase);
+        if (now == kNoPhase) {
+            ++stale;
+            continue;
+        }
         const double step = phase_delta(now, phase, kLogPeriod);
         // 8.8 fixed point at under a pixel a frame, so a step is never a jump
-        REQUIRE(std::fabs(step) <= 1.0);
+        REQUIRE(std::fabs(step) <= 1.0 * stale);
         if (step != 0) {
             if (sign == 0) {
                 sign = step > 0 ? 1 : -1;
@@ -2173,6 +2342,8 @@ TEST_CASE("logs_move_and_keep_their_gap") {
         }
         travelled += step;
         phase = now;
+        stale = 1;
+        ++sampled;
 
         // the two logs share the lane's speed and sit half a lap apart, so their gap never closes
         std::vector<double> centers;
@@ -2187,6 +2358,7 @@ TEST_CASE("logs_move_and_keep_their_gap") {
             }
         }
     }
+    REQUIRE(sampled > 100u);
     REQUIRE(std::fabs(travelled) >= 40.0);
 }
 
@@ -2210,6 +2382,11 @@ TEST_CASE("logs_ride_a_shorter_lap") {
                 if (log.band == band) {
                     centers.push_back(log_center(log));
                 }
+            }
+            // a torn band reads one of the pair off the newer frame and the other off the older
+            if (band >= 0 &&
+                band_is_torn(gameboy, kLogFirstTileId, kLogLastTileId, kRiderBridge, band, kLogPx)) {
+                centers.clear();
             }
             if (centers.size() == 2u) {
                 REQUIRE(std::fabs(centers[1] - centers[0]) == kLogPeriod);
@@ -2521,13 +2698,13 @@ TEST_CASE("difficulty_ramps_car_speed") {
 }
 
 // the whole quiet-warning-sweep loop fits in this, well short of the eagle's patience
-constexpr uint32_t kTrackWatchFrames = 400;
+constexpr uint32_t kTrackWatchFrames = 500;
 // the light first drops its crossbuck 15 frames into a 60 frame warning, so the sweep is 46 away
 constexpr int kBlinkToTrainMin = 40;
 constexpr int kBlinkToTrainMax = 55;
-// 5 px a frame from just off the right edge takes this many frames to clear the screen
-constexpr int kSweepMin = 30;
-constexpr int kSweepMax = 46;
+// 416 px of travel at 5 px a frame: a 256 px train takes well over a screen's worth of frames
+constexpr int kSweepMin = 74;
+constexpr int kSweepMax = 92;
 // the sweep enters at the right edge, so its first sighting reaches within a sprite of it
 constexpr int kEnterX = 152;
 // the two dings of a warning, kTrackBellGap apart
@@ -2589,6 +2766,7 @@ TEST_CASE("warning_precedes_train") {
         int toggles = 0;
         int entered = -1;
         int leftmost = static_cast<int>(gb::kLcdWidth);
+        int jumps = 0;
         bool off = false;
         bool leftward = true;
         for (uint32_t frame = 0; frame < kTrackWatchFrames && gone < 0; ++frame) {
@@ -2603,21 +2781,23 @@ TEST_CASE("warning_precedes_train") {
                 blink = static_cast<int>(frame);
             }
 
-            int x0 = -1;
-            int x1 = -1;
-            for (const CarRun& sweep : train_runs(gameboy)) {
-                if (sweep.band == chick_band(c) - 1) {
-                    x0 = sweep.x0;
-                    x1 = sweep.x1;
-                }
-            }
+            // head sprites, bg carriages or the rear pair: any of them is the sweep still
+            // crossing. scoped to the watched lane so another visible track cannot bleed in
+            const auto [x0, x1] = train_span_in_band(gameboy, c.y / kBandPx - 1);
             if (x0 >= 0) {
                 if (train < 0) {
                     train = static_cast<int>(frame);
                     entered = x1;
                 }
-                leftward = leftward && x0 <= leftmost;
-                leftmost = x0;
+                // the vblank-edge snapshot can catch the head parking one frame
+                // before the column it vacated shows its carriage, a one-off
+                // 8 px pop; anything larger or repeated is a real reversal
+                if (x0 > leftmost) {
+                    ++jumps;
+                    leftward = leftward && x0 - leftmost <= 8 && jumps <= 2;
+                } else {
+                    leftmost = x0;
+                }
             } else if (train >= 0) {
                 gone = static_cast<int>(frame);
             }
@@ -2643,7 +2823,7 @@ TEST_CASE("warning_precedes_train") {
     }
 }
 
-TEST_CASE("train_is_48px") {
+TEST_CASE("train_head_is_32px") {
     const std::vector<uint8_t> rom = read_crossy_rom();
 
     for (uint32_t world_wait : {7u, 34u}) {
@@ -2656,19 +2836,100 @@ TEST_CASE("train_is_48px") {
         REQUIRE(c.found);
         const int band = chick_band(c) - 1;
         int measured = 0;
-        for (uint32_t frame = 0; frame < 60 && measured == 0; ++frame) {
+        for (uint32_t frame = 0; frame < 90 && measured == 0; ++frame) {
             for (const CarRun& sweep : train_runs(gameboy)) {
-                // an edge clips the block, so only a sweep well inside the screen gives its length
+                // an edge clips the block, and the rear pair is its own run further back
                 if (sweep.band != band || sweep.x0 == 0 || sweep.x1 == static_cast<int>(gb::kLcdWidth) - 1) {
                     continue;
                 }
+                if (sweep.x1 - sweep.x0 + 1 != kTrainHeadPx) {
+                    continue;
+                }
                 measured = sweep.x1 - sweep.x0 + 1;
-                // six 8 px sprites with nothing between them: every column of the run is lit
-                REQUIRE(train_columns(gameboy, band) == measured);
+                // four 8 px sprites with nothing between them: every column of the run is lit
+                REQUIRE(train_columns(gameboy, band) >= measured);
             }
             gameboy.run_frame();
         }
-        REQUIRE(measured == kTrainPx);
+        REQUIRE(measured == kTrainHeadPx);
+    }
+}
+
+TEST_CASE("train_longer_than_screen") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    // the block is 256 px, so mid crossing it covers all 160 of the screen at once
+    for (uint32_t world_wait : {7u, 34u}) {
+        gb::Gameboy gameboy;
+        enter_world(gameboy, rom, world_wait);
+        REQUIRE(walk_to_track(gameboy, 60));
+        REQUIRE(wait_for_train(gameboy, 1, kTrackWatchFrames));
+
+        int fullest = 0;
+        int full_frames = 0;
+        for (uint32_t frame = 0; frame < 120; ++frame) {
+            const std::vector<bool> cover = train_cover_on_screen(gameboy);
+            int covered = 0;
+            for (bool on : cover) {
+                covered += on ? 1 : 0;
+            }
+            fullest = std::max(fullest, covered);
+            full_frames += covered == static_cast<int>(gb::kLcdWidth) ? 1 : 0;
+            gameboy.run_frame();
+        }
+        // every column of the play area at once, and for long enough to be no single frame fluke
+        REQUIRE(fullest == static_cast<int>(gb::kLcdWidth));
+        REQUIRE(full_frames >= 10);
+        // and that span is longer than the head and rear sprites could ever reach on their own
+        REQUIRE(kTrainSpanPx > static_cast<int>(gb::kLcdWidth));
+        REQUIRE(kTrainHeadPx + kTrainTailPx < static_cast<int>(gb::kLcdWidth));
+    }
+}
+
+TEST_CASE("rails_restored_after_train") {
+    const std::vector<uint8_t> rom = read_crossy_rom();
+
+    for (uint32_t world_wait : {7u, 34u}) {
+        gb::Gameboy gameboy;
+        enter_world(gameboy, rom, world_wait);
+        REQUIRE(walk_to_track(gameboy, 60));
+        REQUIRE(wait_for_train(gameboy, 1, kTrackWatchFrames));
+
+        // wait the whole block out; the rear lifts the carriages column by column behind it
+        bool cleared = false;
+        for (uint32_t frame = 0; frame < 200 && !cleared; ++frame) {
+            gameboy.run_frame();
+            REQUIRE(chick_at(gameboy).found);
+            REQUIRE(carriages_only_on_rails(gameboy));
+            cleared = train_span_on_screen(gameboy).first < 0;
+        }
+        REQUIRE(cleared);
+        // a creep may have been mid slide when the rear cleared; bands only read on a settled world
+        for (uint32_t frame = 0; frame < kSettleFrames && !world_is_settled(gameboy); ++frame) {
+            gameboy.run_frame();
+        }
+
+        const Chick c = chick_at(gameboy);
+        REQUIRE(c.found);
+        // rails end to end again, the warning light back among them, and no carriage anywhere
+        for (int col = 0; col < kGridCols; ++col) {
+            REQUIRE(is_track_tile(cell_tile(gameboy, c, 1, col)));
+        }
+        REQUIRE(warn_cells_in_lane(gameboy, c, 1) == 1);
+        REQUIRE(warn_cell(gameboy, c, 1) == kRailWarnTileId);
+        REQUIRE_FALSE(bg_has_tile(gameboy, kTrainBodyUpperTileId));
+        REQUIRE_FALSE(bg_has_tile(gameboy, kTrainBodyLowerTileId));
+        REQUIRE(play_area_is_all_terrain(gameboy));
+
+        // cross the restored rails and walk on: the lane scrolls away carrying nothing but rails
+        REQUIRE(track_cross(gameboy));
+        for (int step = 0; step < 6 && chick_at(gameboy).found; ++step) {
+            REQUIRE(play_area_is_all_terrain(gameboy));
+            REQUIRE(carriages_only_on_rails(gameboy));
+            if (!autopilot_step(gameboy)) {
+                break;
+            }
+        }
     }
 }
 
@@ -2793,7 +3054,9 @@ TEST_CASE("autopilot_crosses_tracks") {
         for (int step = 0; step < 80 && hud_score(gameboy) < 20; ++step) {
             const Chick c = chick_at(gameboy);
             REQUIRE(c.found);
-            tracks += is_track_tile(cell_tile(gameboy, c, 1, chick_cell(c))) ? 1 : 0;
+            tracks += is_track_lane_tile(cell_tile(gameboy, c, 1, chick_cell(c))) ? 1 : 0;
+            // lanes scroll off mid sweep over a run this long; none of them leaves a carriage behind
+            REQUIRE(carriages_only_on_rails(gameboy));
             if (!autopilot_step(gameboy)) {
                 break;
             }
