@@ -121,7 +121,15 @@ if(GBDK_HOME AND EXISTS "${GB_LCC}")
         OUTPUT ${GB_CROSSY_ROM}
         COMMAND ${GB_LCC} -Wm-yt0x03 -Wm-ya1 -Wm-ynCROSSY -o ${GB_CROSSY_ROM}
                 ${CMAKE_SOURCE_DIR}/games/crossy/main.c
+                ${CMAKE_SOURCE_DIR}/games/crossy/terrain.c
+                ${CMAKE_SOURCE_DIR}/games/crossy/chick.c
+                ${CMAKE_SOURCE_DIR}/games/crossy/hud.c
+                ${CMAKE_SOURCE_DIR}/games/crossy/assets.c
         DEPENDS games/crossy/main.c games/crossy/crossy.h
+                games/crossy/terrain.c games/crossy/terrain.h
+                games/crossy/chick.c games/crossy/chick.h
+                games/crossy/hud.c games/crossy/hud.h
+                games/crossy/assets.c games/crossy/assets.h
         WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
         COMMENT "building crossy.gb with gbdk lcc"
         VERBATIM)
