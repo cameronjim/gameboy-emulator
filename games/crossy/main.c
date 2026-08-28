@@ -1,5 +1,6 @@
 #include "chick.h"
 #include "crossy.h"
+#include "eagle.h"
 #include "hud.h"
 #include "movers.h"
 #include "save.h"
@@ -85,6 +86,7 @@ static void draw_title(void) {
     print_centered(kBestTextY, line);
     hud_hide();
     movers_hide();
+    eagle_hide();
     chick_hover();
 }
 
@@ -103,6 +105,7 @@ static void enter_play(uint8_t seed) {
     movers_init(seed);
     terrain_init(seed);
     chick_init();
+    eagle_init();
     hud_init();
     SHOW_SPRITES;
     SHOW_BKG;
@@ -151,6 +154,7 @@ static void stage_popup(void) {
 static void enter_over(uint16_t score) {
     chick_hide();
     movers_hide();
+    eagle_hide();
     save_record(score);
     // a mid hop death leaves scy between lanes, so snap it before the band is placed
     terrain_apply_scy(0);
@@ -165,6 +169,7 @@ void main(void) {
     uint8_t over_frames = 0;
     uint8_t hover_frames = 0;
     uint8_t afloat = 1;
+    uint8_t taken = 0;
     uint16_t score = 0;
     uint16_t shown = 0;
 
@@ -211,19 +216,26 @@ void main(void) {
         }
 
         // the only bg write of the run happens here, inside vblank
-        chick_update(pressed);
+        // the swoop cannot be outrun, so the buttons go dead the moment it starts
+        chick_update(eagle_active() ? 0U : pressed);
         movers_update();
         // after the logs have moved, so the chick takes the very same 8.8 step they did
         afloat = chick_afloat();
         chick_draw();
         if (chick_lane() > score) {
             score = chick_lane();
+            eagle_reset();
         }
         if (score != shown) {
             shown = score;
             hud_draw(score);
         }
-        if (!afloat || movers_car_hit(chick_lane(), chick_center_x())) {
+        // a creep that leaves the chick below the visible window calls the eagle in at once
+        if ((uint16_t)(terrain_cam_lane() - chick_lane()) > kMaxLanesBehind) {
+            eagle_summon();
+        }
+        taken = eagle_update(chick_center_x(), chick_screen_y());
+        if (taken || (!eagle_active() && (!afloat || movers_car_hit(chick_lane(), chick_center_x())))) {
             enter_over(score);
             over_frames = 0;
             state = kStateOver;

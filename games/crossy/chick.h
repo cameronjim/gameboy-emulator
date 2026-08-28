@@ -25,4 +25,7 @@ uint16_t chick_lane(void);
 // screen x of the chick sprite's center, slide included
 uint8_t chick_center_x(void);
 
+// screen y of the chick sprite's top row, slide included
+uint8_t chick_screen_y(void);
+
 #endif

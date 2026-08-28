@@ -10,6 +10,10 @@
 // sdcc has no cheap variable shift, so the column masks are a table
 static const uint16_t kColBit[kGridCols] = {1U, 2U, 4U, 8U, 16U, 32U, 64U, 128U, 256U, 512U};
 
+// the difficulty ramp's own two columns; the mover speeds live with the movers
+static const uint16_t kRampLane[kRampTiers] = kRampLaneList;
+static const uint8_t kRampTrees[kRampTiers] = kRampTreesList;
+
 static uint8_t rng_state;
 // lane records cached per ring slot, so a streamed row never re-rolls the rng
 static uint16_t lane_trees[kRingLanes];
@@ -22,6 +26,8 @@ static uint8_t prev_gap;
 // next lane index to generate; always the camera lane plus the lanes ahead
 static uint16_t gen_next;
 static uint16_t cam_lane;
+// play frames since the camera last moved; the creep is what punishes standing still
+static uint16_t creep_frames;
 static uint8_t lane_buf[2U * kScreenCols];
 
 static uint8_t rng_next(void) {
@@ -32,6 +38,15 @@ static uint8_t rng_next(void) {
 // forward is up-screen, so map y falls as the lane index rises
 static uint8_t ring_row(uint16_t lane) {
     return (uint8_t)((kMapRows - (uint8_t)((uint8_t)(lane & kRingLaneMask) << 1)) & (kMapRows - 1U));
+}
+
+static uint8_t ramp_tier(uint16_t lane) {
+    uint8_t t = 0;
+
+    while ((uint8_t)(t + 1U) < kRampTiers && lane >= kRampLane[t + 1U]) {
+        ++t;
+    }
+    return t;
 }
 
 // g wanders at most two columns per lane and never reaches an edge column
@@ -67,9 +82,11 @@ static uint8_t next_kind(void) {
 
 static void generate_lane(uint16_t lane) {
     uint8_t slot = (uint8_t)(lane & kRingLaneMask);
+    uint8_t tier = ramp_tier(lane);
     uint16_t trees = 0;
     uint8_t g = prev_gap;
     uint8_t kind = kLaneGrass;
+    uint8_t chained;
     uint8_t lo;
     uint8_t hi;
     uint8_t n;
@@ -85,11 +102,12 @@ static void generate_lane(uint16_t lane) {
     if (lane >= kPlainLanes) {
         kind = next_kind();
     }
+    chained = (lane != 0U && lane_kind[(uint8_t)(lane - 1U) & kRingLaneMask] == kind) ? 1U : 0U;
     if (kind != kLaneGrass) {
         // asphalt and open water are both clear ground; their danger is what slides along them
-        movers_lane_init(slot, (uint8_t)(kind == kLaneWater));
+        movers_lane_init(slot, (uint8_t)(kind == kLaneWater), tier, chained);
     } else if (lane >= kPlainLanes) {
-        n = (uint8_t)(rng_next() % (kMaxTreesPerLane + 1U));
+        n = (uint8_t)(rng_next() % (uint8_t)(kRampTrees[tier] + 1U));
         for (i = 0; i < n; ++i) {
             c = (uint8_t)(rng_next() % kGridCols);
             // the span between the two gaps stays clear, so the path is always walkable
@@ -155,6 +173,7 @@ void terrain_init(uint8_t seed) {
     prev_gap = kChickSpawnCol;
     cam_lane = 0;
     gen_next = 0;
+    creep_frames = 0;
     chunk_kind = kLaneGrass;
     chunk_left = 0;
 
@@ -201,10 +220,19 @@ uint16_t terrain_cam_lane(void) {
 
 void terrain_advance(void) {
     ++cam_lane;
+    creep_frames = 0;
     // the new lane sits one row above the top edge until scy slides, so it is safe to write
     generate_lane(gen_next);
     draw_lane(gen_next);
     ++gen_next;
+}
+
+uint8_t terrain_creep_due(void) {
+    if (creep_frames < kCreepFrames) {
+        ++creep_frames;
+    }
+    // it saturates, so a creep landing mid slide simply waits for the next settled frame
+    return creep_frames >= kCreepFrames ? 1U : 0U;
 }
 
 void terrain_apply_scy(uint8_t slide_px) {

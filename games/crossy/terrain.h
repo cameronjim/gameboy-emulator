@@ -20,6 +20,9 @@ uint8_t terrain_lane_screen_y(uint16_t lane);
 
 uint16_t terrain_cam_lane(void);
 
+// counts one play frame and reads 1 once a whole creep interval has passed without an advance
+uint8_t terrain_creep_due(void);
+
 // moves the camera one lane forward and streams the single lane that just came into range
 void terrain_advance(void);
 

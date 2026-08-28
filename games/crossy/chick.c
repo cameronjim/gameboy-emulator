@@ -15,6 +15,8 @@ static uint16_t px_x;
 static int8_t slide_x;
 static int8_t slide_y;
 static uint8_t slide_scy;
+// 1 while the camera slide came from a hop; a creep's slide drags the chick down screen instead
+static uint8_t slide_hop;
 
 static uint8_t hopping(void) {
     return (slide_x != 0 || slide_y != 0 || slide_scy != 0U) ? 1U : 0U;
@@ -64,6 +66,7 @@ static void hop_forward(void) {
         // the camera keeps pace, so the chick holds its screen row while the world slides
         terrain_advance();
         slide_scy = kHopSlidePx;
+        slide_hop = 1;
     } else {
         slide_y = kHopSlidePx;
     }
@@ -115,6 +118,7 @@ void chick_init(void) {
     slide_x = 0;
     slide_y = 0;
     slide_scy = 0;
+    slide_hop = 0;
     OBP0_REG = kChickObp;
     set_sprite_data(kChickTileId, kChickFrames, kChickTiles);
     set_sprite_prop(kChickSprite, 0);
@@ -138,6 +142,12 @@ void chick_update(uint8_t pressed) {
         } else if (pressed & J_RIGHT) {
             hop_right();
         }
+    }
+    // the counter ticks every frame; a slide in flight defers the creep to the next settled one
+    if (terrain_creep_due() && !hopping()) {
+        terrain_advance();
+        slide_scy = kHopSlidePx;
+        slide_hop = 0;
     }
 
     slide_x = step_toward_zero(slide_x);
@@ -164,10 +174,8 @@ uint8_t chick_afloat(void) {
 }
 
 void chick_draw(void) {
-    uint8_t behind = (uint8_t)(terrain_cam_lane() - lane);
-    uint8_t inset = terrain_is_water(lane) ? kChickWaterInset : kChickCellInset;
     uint8_t x = (uint8_t)(left_px() + (uint8_t)slide_x);
-    uint8_t y = (uint8_t)(kCamLaneScreenY + (uint8_t)(behind << 4) + inset + (uint8_t)slide_y);
+    uint8_t y = chick_screen_y();
 
     move_sprite(kChickSprite, (uint8_t)(x + kOamXOffset), (uint8_t)(y + kOamYOffset));
     set_sprite_tile(kChickSprite, hopping() ? kChickHopTileId : kChickTileId);
@@ -184,4 +192,12 @@ uint16_t chick_lane(void) {
 
 uint8_t chick_center_x(void) {
     return (uint8_t)((uint8_t)(left_px() + kChickHalfPx) + (uint8_t)slide_x);
+}
+
+uint8_t chick_screen_y(void) {
+    uint8_t inset = terrain_is_water(lane) ? kChickWaterInset : kChickCellInset;
+    // a hop's slide is the world moving under a still chick, so its lift cancels the lane's
+    uint8_t lift = slide_hop != 0U ? slide_scy : 0U;
+
+    return (uint8_t)(terrain_lane_screen_y(lane) + inset + (uint8_t)slide_y + lift);
 }
