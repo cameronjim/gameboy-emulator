@@ -24,13 +24,26 @@ out-of-scope items noticed during milestones, per claude.md rule 8.
 - crossy: adding tracks changed the rng draw count from lane 15 on, so the
   pinned seeds of difficulty_ramps_car_speed had to be re-searched. any future
   generation change past lane 15 will move them again.
-- crossy: an odd length hover line sits half a tile cell left of centre, so
-  "BEST 12" is 4 px off while "BEST 0" is exact. print_centered works on the 20
-  column grid; sub-cell centring would need the text drawn as sprites, as
-  flappy's is not either.
+- crossy: the game over popup's SCORE and BEST lines are still bg text, so an
+  odd length still sits half a tile cell left of centre. only the hover banner's
+  best is pixel centred, because only it is drawn with the hud's digit sprites.
 - crossy: the mover pool is exactly full at its worst visible window (five water
   lanes, or four plus a track). a sixth danger lane on screen would need either a
   bigger pool or a tighter generation cap.
 - crossy: a log still pops out of view when its centre crosses screen x 0, since
   the draw limit parks a mover by its track x rather than by its far edge. the
   shorter water lap did not change that.
+- crossy: hover draws no movers on the three lanes the banner covers, so a car
+  or log on lanes 4-6 pops in over the unlock's three erase frames rather than
+  sliding in. per-lane sprite clipping would fix it and cost a scanline test.
+- crossy: the world's seed now comes from the free running frame counter at
+  hover entry, so the boot world is one fixed world. a scripted test reaches any
+  other world only by dying and choosing when to dismiss the popup, which is
+  what the tests' enter_world helper does.
+- crossy: the water glint tile repeats every 8 px, so its glints line up in
+  columns across a lane. a second glint tile alternated per cell would scatter
+  them and cost one more tile id.
+- crossy: colorize_crossy maps unmapped tiles through kGrayShades, where shade 3
+  is white, so the inverted font band renders as a pale card even though a dmg
+  shows it black. the game over popup has always looked that way; giving the
+  0x60-0x9f range its own palette is a frontend change of its own.
