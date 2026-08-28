@@ -124,6 +124,7 @@ if(GBDK_HOME AND EXISTS "${GB_LCC}")
                 ${CMAKE_SOURCE_DIR}/games/crossy/terrain.c
                 ${CMAKE_SOURCE_DIR}/games/crossy/chick.c
                 ${CMAKE_SOURCE_DIR}/games/crossy/movers.c
+                ${CMAKE_SOURCE_DIR}/games/crossy/eagle.c
                 ${CMAKE_SOURCE_DIR}/games/crossy/hud.c
                 ${CMAKE_SOURCE_DIR}/games/crossy/save.c
                 ${CMAKE_SOURCE_DIR}/games/crossy/assets.c
@@ -131,6 +132,7 @@ if(GBDK_HOME AND EXISTS "${GB_LCC}")
                 games/crossy/terrain.c games/crossy/terrain.h
                 games/crossy/chick.c games/crossy/chick.h
                 games/crossy/movers.c games/crossy/movers.h
+                games/crossy/eagle.c games/crossy/eagle.h
                 games/crossy/hud.c games/crossy/hud.h
                 games/crossy/save.c games/crossy/save.h
                 games/crossy/assets.c games/crossy/assets.h
