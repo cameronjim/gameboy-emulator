@@ -13,6 +13,8 @@
 #define kTitleTextY 6U
 #define kPromptTextY 10U
 #define kBestTextY 12U
+// the start press erases the text; columns 18-19 hold the previewed pipe
+#define kTitleEraseCols 18U
 
 // gbdk's ibm font lands ascii 0x20-0x7f on tiles 0x00-0x5f
 #define kFontFirstChar 0x20U
@@ -55,13 +57,13 @@
 
 #define kPipeWidthCols 2U    // 16 px
 #define kPipeSpacingCols 12U // 96 px between pipe pairs
-#define kFirstPipeCol 24U    // first pipe pair starts off the right edge
+#define kFirstPipeCol 18U    // first pipe pair sits at the right edge, previewed on the title
 #define kGapTopMin 1U        // one row of pipe always shows above the gap
 #define kGapTopSlack 1U      // and one row always shows below it
 
 #define kPipeWidthPx 16U
 #define kPipeSpacingPx 96U
-#define kFirstPipeWorldX 192U // kFirstPipeCol * 8
+#define kFirstPipeWorldX 144U // kFirstPipeCol * 8
 
 // difficulty by score: speed is 8.8 px per frame, gap is rows of clear air
 #define kDiffSteps 5U

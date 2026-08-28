@@ -1,4 +1,3 @@
-#include "assets.h"
 #include "bird.h"
 #include "flappy.h"
 #include "hud.h"
@@ -14,7 +13,7 @@
 
 enum GameState { kStateTitle, kStatePlay, kStateOver };
 
-static uint8_t strip[kScreenCols];
+static uint8_t strip[kTitleEraseCols];
 static uint8_t popup[kPopupRows][kPopupCols];
 // map column under screen column 0 when the round froze
 static uint8_t popup_col;
@@ -70,52 +69,46 @@ static void build_inverse_font(void) {
     }
 }
 
-static void draw_ground_strip(void) {
-    uint8_t c;
-    for (c = 0; c < kScreenCols; ++c) {
-        strip[c] = kGroundTileId;
-    }
-    set_bkg_tiles(0, kMapRows - 2U, kScreenCols, 1, strip);
-    set_bkg_tiles(0, kMapRows - 1U, kScreenCols, 1, strip);
-}
-
 static void print_centered(uint8_t y, const char* text) {
     gotoxy((uint8_t)((kScreenCols - text_len(text)) / 2U), y);
     printf("%s", text);
 }
 
-// the hover screen; redrawn on every entry so a new best shows straight away
-static void draw_title(void) {
+// the hover screen; the world behind the text is the course the run will face
+static void draw_title(uint8_t seed) {
     BGP_REG = kTitleBgp;
-    SCX_REG = 0;
-    SCY_REG = 0;
-    cls();
+    world_init(seed);
     print_centered(kTitleTextY, "FLAPPY");
     print_centered(kPromptTextY, "SPACE TO START");
     format_value("BEST", save_best());
     print_centered(kBestTextY, line);
-    set_bkg_data(kGroundTileId, 1, kGroundTile);
-    draw_ground_strip();
+    hud_init();
     hud_hide();
     bird_init();
 }
 
-static void enter_title(void) {
-    // lcd off so cls and the tile uploads cannot land mid-scanline
+static void enter_title(uint8_t seed) {
+    // lcd off so the streamed world and the tile uploads cannot land mid-scanline
     DISPLAY_OFF;
-    draw_title();
+    draw_title(seed);
     DISPLAY_ON;
 }
 
-static void enter_play(uint8_t seed) {
-    DISPLAY_OFF;
-    cls();
-    world_init(seed);
-    bird_init();
-    hud_init();
-    SHOW_SPRITES;
-    SHOW_BKG;
-    DISPLAY_ON;
+// centered text never reaches past column 16, so the previewed pipe survives the wipe
+static void erase_title_text(void) {
+    uint8_t c;
+    for (c = 0; c < kTitleEraseCols; ++c) {
+        strip[c] = kSkyTileId;
+    }
+    set_bkg_tiles(0, kTitleTextY, kTitleEraseCols, 1, strip);
+    set_bkg_tiles(0, kPromptTextY, kTitleEraseCols, 1, strip);
+    set_bkg_tiles(0, kBestTextY, kTitleEraseCols, 1, strip);
+}
+
+// nothing is rebuilt: the run faces the pipe the hover screen was showing
+static void start_run(void) {
+    erase_title_text();
+    hud_draw(0);
 }
 
 static void popup_line(uint8_t row, const char* text) {
@@ -175,7 +168,8 @@ void main(void) {
     uint8_t prev = 0;
     uint8_t pressed = 0;
     uint8_t over_frames = 0;
-    uint8_t hover_frames = 0;
+    // free running across every state; the title captures it as the world seed
+    uint8_t frames = 0;
     uint8_t dead = 0;
     uint16_t shown = 0;
     uint16_t score = 0;
@@ -186,25 +180,26 @@ void main(void) {
     sfx_init();
     save_init();
     SPRITES_8x8;
-    draw_title();
+    draw_title(frames);
     SHOW_SPRITES;
     SHOW_BKG;
     DISPLAY_ON;
 
     while (1) {
         vsync();
+        ++frames;
         prev = keys;
         keys = joypad();
         // edge triggered so holding a button never autofires
         pressed = (uint8_t)(keys & (uint8_t)~prev);
 
         if (state == kStateOver) {
-            // map writes only ever happen here, inside vblank
+            // staged two rows a frame so the band's map writes fit one vblank
             stage_popup();
             if (over_frames < kOverLockoutFrames) {
                 ++over_frames;
             } else if (pressed != 0U) {
-                enter_title();
+                enter_title(frames);
                 state = kStateTitle;
             }
             continue;
@@ -212,10 +207,9 @@ void main(void) {
 
         if (state == kStateTitle) {
             bird_hover();
-            ++hover_frames;
             // the dismissing press is spent, so only a fresh press starts the next run
             if (pressed & (J_START | J_A)) {
-                enter_play(hover_frames);
+                start_run();
                 // the press that starts the run is also its first flap
                 bird_flap();
                 bird_draw();

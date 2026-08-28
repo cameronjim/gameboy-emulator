@@ -4,9 +4,12 @@ out-of-scope items noticed during milestones, per claude.md rule 8.
 
 - flappy: the game-over window banner covers the bottom 56 px of the frozen
   scene because a dmg window is full-width; it is now a deliberate solid panel.
-- flappy: rng now seeds off the hover frame counter, so scripted runs are
-  stable across rom changes. (fixed after sub-milestone 4; scripts only need a
-  re-search if the flow timing before the start press changes)
+- flappy: the world is built at title entry and seeded from the free running
+  frame counter, so the boot world is one fixed world and a test reaches any
+  other only by dying and choosing when to dismiss the popup.
+- flappy: the title's text rows are wiped over columns 0-17 at the start press,
+  which leaves the previewed pipe's columns 18-19 untouched. a best score long
+  enough to reach column 17 would survive the wipe; three digits cannot.
 - crossy: a creep slide freezes input for its eight frames, the same way a hop
   slide does. a second slide accumulator would let a hop start mid-creep.
 - crossy: the ramp tier is keyed by the lane being generated, which runs six

@@ -104,8 +104,7 @@ static void stream_column(void) {
 void world_init(uint8_t seed) {
     uint8_t i;
 
-    // seeded from the hover frame count, so a human's press time picks the
-    // round but a scripted run is stable across rom changes
+    // seeded at title entry from the free running frame count, so the boot world is fixed
     rng_state = seed;
     world_x = 0;
     next_col = 0;
