@@ -24,3 +24,13 @@ out-of-scope items noticed during milestones, per claude.md rule 8.
 - crossy: adding tracks changed the rng draw count from lane 15 on, so the
   pinned seeds of difficulty_ramps_car_speed had to be re-searched. any future
   generation change past lane 15 will move them again.
+- crossy: an odd length hover line sits half a tile cell left of centre, so
+  "BEST 12" is 4 px off while "BEST 0" is exact. print_centered works on the 20
+  column grid; sub-cell centring would need the text drawn as sprites, as
+  flappy's is not either.
+- crossy: the mover pool is exactly full at its worst visible window (five water
+  lanes, or four plus a track). a sixth danger lane on screen would need either a
+  bigger pool or a tighter generation cap.
+- crossy: a log still pops out of view when its centre crosses screen x 0, since
+  the draw limit parks a mover by its track x rather than by its far edge. the
+  shorter water lap did not change that.
