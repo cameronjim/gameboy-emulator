@@ -126,6 +126,15 @@ void chick_draw(void) {
     set_sprite_tile(kChickSprite, hopping() ? kChickHopTileId : kChickTileId);
 }
 
+void chick_hide(void) {
+    // oam y 0 parks a sprite entirely above the screen
+    move_sprite(kChickSprite, 0, 0);
+}
+
 uint16_t chick_lane(void) {
     return lane;
+}
+
+uint8_t chick_center_x(void) {
+    return (uint8_t)((uint8_t)((uint8_t)(col << 4) + kChickCenterInset) + (uint8_t)slide_x);
 }

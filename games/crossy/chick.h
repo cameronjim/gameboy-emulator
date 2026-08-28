@@ -14,6 +14,12 @@ void chick_update(uint8_t pressed);
 
 void chick_draw(void);
 
+void chick_hide(void);
+
+// the lane the chick answers to; a hop commits it the frame it starts
 uint16_t chick_lane(void);
+
+// screen x of the chick sprite's center, slide included
+uint8_t chick_center_x(void);
 
 #endif
