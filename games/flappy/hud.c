@@ -39,12 +39,12 @@ void hud_draw(uint16_t score) {
     digit[2] = (uint8_t)(score % 10U);
     shown = digit[0] != 0U ? 3U : (digit[1] != 0U ? 2U : 1U);
 
-    x = (uint8_t)(kHudCenterOamX - (uint8_t)(shown * (kDigitWidthPx / 2U)));
+    x = (uint8_t)(kHudCenterOamX - (uint8_t)((uint8_t)(shown * kDigitPitchPx) / 2U));
     for (i = 0; i < kHudDigits; ++i) {
         s = (uint8_t)(kHudFirstSprite + i);
         if (i < shown) {
             set_sprite_tile(s, (uint8_t)(kDigitTileId + digit[kHudDigits - shown + i]));
-            move_sprite(s, (uint8_t)(x + (uint8_t)(i * kDigitWidthPx)), kHudOamY);
+            move_sprite(s, (uint8_t)(x + (uint8_t)(i * kDigitPitchPx)), kHudOamY);
         } else {
             // oam y 0 parks a sprite entirely above the screen
             move_sprite(s, 0, 0);

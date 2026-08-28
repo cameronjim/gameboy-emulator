@@ -81,6 +81,8 @@
 #define kHudOamY 32U       // screen y 16
 #define kHudCenterOamX 88U // screen x 80; the run is centered by half a digit per digit
 #define kDigitWidthPx 8U
+// a badge is 7 px of art in the 8 px tile; this pitch joins the halos into one plate
+#define kDigitPitchPx 7U
 #define kScoreMax 999U // three digits is all the hud and the popup can show
 
 // game over popup: a band of bg cells over the frozen world, no window layer involved

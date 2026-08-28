@@ -156,6 +156,11 @@ std::vector<DigitRun> hud_digits(const gb::Gameboy& gameboy) {
             open = false;
             continue;
         }
+        // badges abut at a 7 px pitch, so a run also ends on a tile change or at full width
+        if (open &&
+            (runs.back().digit != static_cast<uint8_t>(digit) || static_cast<int>(x) - runs.back().x0 >= 7)) {
+            open = false;
+        }
         if (!open) {
             runs.push_back(
                 DigitRun{static_cast<uint8_t>(digit), static_cast<int>(x), static_cast<int>(x), y0, y1, 0});
@@ -1281,7 +1286,9 @@ TEST_CASE("two_digit_score_renders_fully") {
         REQUIRE(run.x1 < static_cast<int>(gb::kLcdWidth) - 1);
         REQUIRE(run.pixels >= 40u);
     }
-    REQUIRE(digits[1].x0 - digits[0].x0 == 8);
+    // the badges share their halo edge: no sky column between them
+    REQUIRE(digits[1].x0 - digits[0].x0 == 7);
+    REQUIRE(digits[1].x0 == digits[0].x1 + 1);
 }
 
 namespace {
