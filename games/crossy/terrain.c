@@ -175,11 +175,12 @@ static void draw_lane(uint16_t lane) {
             continue;
         }
         if (lane_kind[slot] == kLaneWater) {
-            // glints on the top row, calm below, so the 16 px lane reads as one band
-            lane_buf[x] = kWaterTileId;
-            lane_buf[x + 1U] = kWaterTileId;
-            lane_buf[kScreenCols + x] = kWaterCalmTileId;
-            lane_buf[kScreenCols + x + 1U] = kWaterCalmTileId;
+            // one tile across both rows, picked by lane parity: the lane is a flat band of it
+            t = (lane & 1U) != 0U ? kWaterDarkTileId : kWaterTileId;
+            lane_buf[x] = t;
+            lane_buf[x + 1U] = t;
+            lane_buf[kScreenCols + x] = t;
+            lane_buf[kScreenCols + x + 1U] = t;
             continue;
         }
         if ((trees & kColBit[c]) != 0U) {
@@ -228,7 +229,7 @@ void terrain_init(uint8_t seed) {
     set_bkg_data(kRoadTileId, 1, kRoadTile);
     set_bkg_data(kRoadStripeTileId, 1, kRoadStripeTile);
     set_bkg_data(kWaterTileId, 1, kWaterTile);
-    set_bkg_data(kWaterCalmTileId, 1, kWaterCalmTile);
+    set_bkg_data(kWaterDarkTileId, 1, kWaterDarkTile);
 
     set_bkg_data(kRailTileId, 1, kRailTile);
     set_bkg_data(kRailWarnTileId, 1, kRailWarnTile);

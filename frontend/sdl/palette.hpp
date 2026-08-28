@@ -94,7 +94,7 @@ inline constexpr Palette4 kGrayShades = {kBlack, 0xFF4C4C55u, 0xFF9C9CA8u, kWhit
 
 // crossy road pins every tile id, so each lane kind gets its own palette.
 // the art's own shade usage drives which entries matter: grass is shade 0 with
-// shade 1 sprigs, road is flat shade 2, water is shade 1 under shade 3 crests.
+// shade 1 sprigs, road is flat shade 2, water is one flat shade under its ripples.
 inline constexpr Palette4 kCrossyGrass = {0xFF74BE45u, 0xFF4C9A2Bu, 0xFF97D46Fu, 0xFFC6EDA4u};
 // the alt lane draws its sprigs in shade 2, the even lane's in shade 1
 inline constexpr Palette4 kCrossyGrassAlt = {0xFF57972Fu, 0xFF44802Au, 0xFF3D7220u, 0xFF8CC05Cu};
@@ -102,17 +102,22 @@ inline constexpr Palette4 kCrossyTree = {0xFF0C2A10u, 0xFF14421Bu, 0xFF0E3616u, 
 inline constexpr Palette4 kCrossyRoad = {0xFF2A2C30u, 0xFF4A4E54u, 0xFF6E7278u, 0xFFB9BEC4u};
 // the dash is the tile's shade 0, so it is the one entry that goes white
 inline constexpr Palette4 kCrossyRoadStripe = {0xFFF4F4ECu, 0xFF4A4E54u, 0xFF6E7278u, 0xFFB9BEC4u};
-inline constexpr Palette4 kCrossyWater = {0xFF0B2A66u, 0xFF2A6FD8u, 0xFF4E97E8u, 0xFF9FD4FFu};
+// the even lane's water is shade 2 with shade 3 ripples: the shallow blue
+inline constexpr Palette4 kCrossyWater = {0xFF0B2A66u, 0xFF2A6FD8u, 0xFF3F86E8u, 0xFF66A9F4u};
+// the odd lane's is shade 1 with shade 2 ripples, a clear step deeper and the same hue
+inline constexpr Palette4 kCrossyWaterDark = {0xFF06183Fu, 0xFF1F4FA6u, 0xFF3A76CEu, 0xFF4E8BD8u};
 inline constexpr Palette4 kCrossyRail = {0xFF2A2018u, 0xFF5A3A22u, 0xFF8A8580u, 0xFFD8DCE0u};
 // the crossbuck cell is shade 3, its x shade 0: a red field makes the blink pop
 inline constexpr Palette4 kCrossyWarn = {0xFFFFE9A8u, 0xFF8C1E16u, 0xFFB52A20u, 0xFFE23B2Eu};
-inline constexpr Palette4 kCrossyCar = {kBlack, 0xFFE0342Au, 0xFF9E1F18u, 0xFFDCEBFFu};
-inline constexpr Palette4 kCrossyLog = {kBlack, 0xFF3A2410u, 0xFF9A6534u, 0xFF5B3A1Cu};
-// the train's windows are its shade 1, so they light up warm against the slate
-inline constexpr Palette4 kCrossyTrain = {kBlack, 0xFFFFD34Au, 0xFF2C3340u, 0xFF5A6473u};
-inline constexpr Palette4 kCrossyEagle = {kBlack, 0xFF2A1A0Cu, 0xFFF2EAD8u, 0xFF4A3018u};
-// the chick's body is shade 2 and its beak, eyes and legs shade 3
-inline constexpr Palette4 kCrossyChick = {kBlack, 0xFFE06A00u, kWhite, 0xFFFF9A12u};
+// the car's outline and wheels are shade 1, its panels shade 2 and its glass shade 3
+inline constexpr Palette4 kCrossyCar = {kBlack, 0xFF2A1410u, 0xFFE0342Au, 0xFFCFE6FFu};
+// the log's rim is shade 1, its bark shade 2 and its lit crown shade 3
+inline constexpr Palette4 kCrossyLog = {kBlack, 0xFF3F2611u, 0xFF9A6534u, 0xFFC08F4Eu};
+// the train's windows are its shade 3, so they light up warm against the slate
+inline constexpr Palette4 kCrossyTrain = {kBlack, 0xFF1E242Fu, 0xFF5A6473u, 0xFFFFD34Au};
+inline constexpr Palette4 kCrossyEagle = {kBlack, 0xFF4A3018u, 0xFFF2EAD8u, 0xFFE0A032u};
+// a near black outline round a white body, so the chick reads on grass, asphalt and bark alike
+inline constexpr Palette4 kCrossyChick = {kBlack, 0xFF2A1A08u, kWhite, 0xFFFF9A12u};
 
 // id: low byte tile index, bit 8 sprite. crossy's bg and sprite tiles occupy
 // disjoint pinned ranges, so the tile index alone picks the palette.
@@ -136,26 +141,24 @@ inline uint32_t colorize_crossy(uint16_t id, uint8_t shade) {
         return kCrossyWarn[s];
     case 0xA7:
         return kCrossyGrassAlt[s];
-    // the calm half of a water lane shares the water's palette exactly
     case 0xA8:
-        return kCrossyWater[s];
+        return kCrossyWaterDark[s];
     default:
         break;
     }
-    if (tile >= 0xC0 && tile <= 0xC1) {
+    // every sprite is an 8x16 pair, so each family owns an even aligned run of tiles
+    if (tile >= 0xB0 && tile <= 0xB3) {
         return kCrossyCar[s];
     }
-    // 0xc5-0xc6 are unpinned, so a wider log keeps the same wood
-    if (tile >= 0xC4 && tile <= 0xC6) {
+    if (tile >= 0xB4 && tile <= 0xB9) {
         return kCrossyLog[s];
     }
-    if (tile >= 0xC8 && tile <= 0xCB) {
-        return kCrossyTrain[s];
-    }
-    if (tile >= 0xCC && tile <= 0xCD) {
+    if (tile >= 0xBC && tile <= 0xBF) {
         return kCrossyEagle[s];
     }
-    // 0xe3 is reserved for a player frame by the tile contract
+    if (tile >= 0xC0 && tile <= 0xC7) {
+        return kCrossyTrain[s];
+    }
     if (tile >= 0xE0 && tile <= 0xE3) {
         return kCrossyChick[s];
     }
